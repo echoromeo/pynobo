@@ -152,37 +152,30 @@ class nobo:
                 discover_ip = broadcast[1][0]
             ds.close()
 
+        # create an ipv4 (AF_INET) socket object using the tcp protocol (SOCK_STREAM)
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client.settimeout(5)
+
+        # check if we have an IP
         if ip:
             hub_ip = ip
         elif discover_ip:
             hub_ip = discover_ip
         else:
-            print("No ip found..")
-            return
-
+            raise ValueError('could not find ip')
+        # connect the client - let a timeout exception be raised?
+        self.client.connect((hub_ip, 27779))
+            
+        # check if we have a serial before we start connection
         if len(serial) == 12:
             hub_serial = serial
         elif discover_serial:
             hub_serial = discover_serial+serial
         else:
-            print("No serial found..")
-            return
-
-        # create an ipv4 (AF_INET) socket object using the tcp protocol (SOCK_STREAM)
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        # connect the client
-        self.client.settimeout(5)
-        try:
-            self.client.connect((hub_ip, 27779))
-        except socket.timeout:
-            print("Failed, socket not available")
-            return # TODO something?
-
-        # TODO: Add some timeout exception here?
-
+            raise ValueError('could not find serial')
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
         self.send_command([self.API.START, self.API.VERSION, hub_serial, arrow.now().format('YYYYMMDDHHmmss')])
+
         # receive the response data (4096 is recommended buffer size)
         response = self.get_response_short()
         logging.debug('first handshake response: %s', response)
@@ -222,7 +215,7 @@ class nobo:
             # 1=Hub serial number mismatch.
             # 2=Wrong number of arguments.
             # 3=Timestamp incorrectly formatted 
-            print("Connection failed")
+            raise Exception('connection to hub rejected: {}'.format(response[0]))
 
     # Function to send a list with command string(s)
     def send_command(self, command_array):
