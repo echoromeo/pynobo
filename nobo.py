@@ -8,8 +8,9 @@
 # Example: glen = nobo('123') or glen = nobo('123123123123', '10.0.0.128', False)
 
 import time
-import socket
 import arrow
+import logging
+import socket
 import threading
 
 class nobo:
@@ -144,7 +145,7 @@ class nobo:
             ds = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             ds.bind((' ',10000))
             broadcast = ds.recvfrom(1024) #TODO: Need to make sure we receive the correct broadcast
-            print("broadcast:", broadcast)
+            logging.info('broadcast received: %s', broadcast)
             # Expected string “__NOBOHUB__123123123”, where 123123123 is replaced with the first 9 digits of the Hub’s serial number.
             if broadcast[0][:11] == b'__NOBOHUB__':
                 discover_serial = str(broadcast[0][-9:], 'utf-8')
@@ -184,7 +185,7 @@ class nobo:
         self.send_command([self.API.START, self.API.VERSION, hub_serial, arrow.now().format('YYYYMMDDHHmmss')])
         # receive the response data (4096 is recommended buffer size)
         response = self.get_response_short()
-        print("First response:", response)
+        logging.debug('first handshake response: %s', response)
 
         # successful response is "HELLO <its version of command set>\r"
         if response[0][0] == self.API.START:
@@ -225,7 +226,7 @@ class nobo:
 
     # Function to send a list with command string(s)
     def send_command(self, command_array):
-        print("Sending:", command_array)
+        logging.debug('sending: %s', command_array)
         message = ' '.join(command_array).encode('utf-8')
         self.client.send(message + b'\r')
     
@@ -262,6 +263,8 @@ class nobo:
         while not self.exit_flag:
             resp = self.get_response_short()
             for r in resp:
+                logging.debug('received: %s', r)
+
                 if r[0] in [self.API.HANDSHAKE, self.API.RESPONSE_SENDING_ALL_INFO]:
                     pass # Ignoring handshake and H00 messages
 
@@ -269,27 +272,27 @@ class nobo:
                 elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_UPDATE_V00]:
                     dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
                     self.zones[dicti['zone_id']] = dicti
-                    print("added/updated zone:", dicti['name'])
+                    logging.info('added/updated zone: %s', dicti['name'])
 
                 elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_UPDATE_V01]:
                     dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
                     self.components[dicti['serial']] = dicti
-                    print("added/updated component:", dicti['name'])
+                    logging.info('added/updated component: %s', dicti['name'])
 
                 elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_UPDATE_V02]:
                     dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
                     dicti['profile'] = r[-1].split(',')
                     self.week_profiles[dicti['week_profile_id']] = dicti
-                    print("added/updated week profile:", dicti['name'])
+                    logging.info('added/updated week profile: %s', dicti['name'])
 
                 elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_B03]:
                     dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
                     self.overrides[dicti['override_id']] = dicti
-                    print("added/updated override: id", dicti['override_id'])
+                    logging.info('added/updated override: id %s', dicti['override_id'])
 
                 elif r[0] in [self.API.RESPONSE_STATIC_INFO, self.API.RESPONSE_UPDATE_V03]:
                     self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
-                    print("updated hub info:", self.hub_info)
+                    logging.info('updated hub info: %s', self.hub_info)
                     if r[0] == self.API.RESPONSE_STATIC_INFO:
                         self.all_received = True
 
@@ -297,13 +300,13 @@ class nobo:
                 elif r[0] == self.API.RESPONSE_REMOVE_S03:
                     dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
                     popped_override = self.overrides.pop(dicti['override_id'], None)
-                    print("removed override: id", dicti['override_id'])
+                    logging.info('removed override: id%s', dicti['override_id'])
 
                 elif r[0][0] == 'E':
-                    print("error! what did you do?", r)
+                    logging.error('error! what did you do? %s', r)
                     #TODO: Raise something here?
 
                 else:
-                    print("Behavior undefined for this command:", r)        
+                    logging.warning('behavior undefined for this command: %s', r)        
 
 
