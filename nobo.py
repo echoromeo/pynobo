@@ -182,32 +182,31 @@ class nobo:
 
         # successful response is "HELLO <its version of command set>\r"
         if response[0][0] == self.API.START:
-            # send “REJECT\r” if command set is not supported.
+            # send “REJECT\r” if command set is not supported? No need to abort if Hub is ok with the mismatch?
             if response[0][1] != self.API.VERSION:
-                self.send_command([self.API.REJECT])
-                print("Failed API version")
-            else:
-                # send/receive handshake complete
-                self.send_command([self.API.HANDSHAKE])
-                self.last_handshake = time.time()
-                response = self.get_response_short()
-                print("Second response:", response)
-                
-                # if successful handshake, get all info from hub
-                if response[0][0] == self.API.HANDSHAKE:
-					# start thread for continously receiving new data from hub
-                    self.socket_thread = threading.Thread(target=self.socket_receive)
-                    self.socket_thread.daemon = True
-                    self.socket_thread.start()
+                #self.send_command([self.API.REJECT])
+                logging.warning('api version might not match, hub: v%s, pynobo: v%s', response[0][1], self.API.VERSION)
 
-					# Fetch all info 
-                    self.send_command([self.API.GET_ALL_INFO])
-                    self.all_received = False
-                    while not self.all_received:
-                        time.sleep(1)
+            # send/receive handshake complete
+            self.send_command([self.API.HANDSHAKE])
+            self.last_handshake = time.time()
+            response = self.get_response_short()
+            logging.debug('second handshake response: %s', response)
+            
+            # if successful handshake, get all info from hub
+            if response[0][0] == self.API.HANDSHAKE:
+                # start thread for continously receiving new data from hub
+                self.socket_thread = threading.Thread(target=self.socket_receive)
+                self.socket_thread.daemon = True
+                self.socket_thread.start()
 
-                    #TODO: Need to work on the keep-alive stuff
-                    print("Connected!")
+                # Fetch all info 
+                self.send_command([self.API.GET_ALL_INFO])
+                self.all_received = False
+                while not self.all_received:
+                    time.sleep(1)
+
+                logging.info('connected to Nobø Hub')
         
         else:
             # Reject response: "REJECT <reject code>\r"
