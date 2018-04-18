@@ -9,6 +9,7 @@
 
 import time
 import arrow
+import warnings
 import logging
 import socket
 import threading
@@ -162,6 +163,7 @@ class nobo:
         elif discover_ip:
             hub_ip = discover_ip
         else:
+            logging.error('could not find ip')
             raise ValueError('could not find ip')
         # connect the client - let a timeout exception be raised?
         self.client.connect((hub_ip, 27779))
@@ -172,6 +174,7 @@ class nobo:
         elif discover_serial:
             hub_serial = discover_serial+serial
         else:
+            logging.error('could not find serial')
             raise ValueError('could not find serial')
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
         self.send_command([self.API.START, self.API.VERSION, hub_serial, arrow.now().format('YYYYMMDDHHmmss')])
@@ -185,7 +188,8 @@ class nobo:
             # send “REJECT\r” if command set is not supported? No need to abort if Hub is ok with the mismatch?
             if response[0][1] != self.API.VERSION:
                 #self.send_command([self.API.REJECT])
-                logging.warning('api version might not match, hub: v%s, pynobo: v%s', response[0][1], self.API.VERSION)
+                logging.warning('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION))
+                warnings.warn('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION)) #overkill?     
 
             # send/receive handshake complete
             self.send_command([self.API.HANDSHAKE])
@@ -214,6 +218,7 @@ class nobo:
             # 1=Hub serial number mismatch.
             # 2=Wrong number of arguments.
             # 3=Timestamp incorrectly formatted 
+            logging.error('connection to hub rejected: {}'.format(response[0]))
             raise Exception('connection to hub rejected: {}'.format(response[0]))
 
     # Function to send a list with command string(s)
@@ -299,6 +304,6 @@ class nobo:
                     #TODO: Raise something here?
 
                 else:
-                    logging.warning('behavior undefined for this command: %s', r)        
-
+                    logging.warning('behavior undefined for this command: {}'.format(r))
+                    warnings.warn('behavior undefined for this command: {}'.format(r)) #overkill?        
 
