@@ -139,36 +139,59 @@ class nobo:
         self.all_received = False
         self.exit_flag = True
 
-        discover_ip = None
-        discover_serial = None
+        # Get a socket connection, either by scanning or directly
         if discover:
-            discovered_hubs = self.discover_hubs()
+            discovered_hubs = self.discover_hubs(serial=serial, ip=ip)
             if not discovered_hubs:
                 logging.error("Failed to discover any Nobø Ecohubs")
                 raise Exception("Failed to discover any Nobø Ecohubs")
-            (discover_ip, discover_serial) = discovered_hubs.pop()
-
-        # check if we have an IP
-        if ip:
-            hub_ip = ip
-        elif discover_ip:
-            hub_ip = discover_ip
+            while discovered_hubs:
+                (discover_ip, discover_serial) = discovered_hubs.pop()
+                try:
+                    self.connect_hub(discover_ip, discover_serial)
+                    break  # We connect to the first valid hub, no reason to try the rest
+                except Exception as e:
+                    # This might not have been the Ecohub we wanted (wrong serial)
+                    logging.warning("Could not connect to {}:{} - {}".format(
+                                    discover_ip, discover_serial, e))
         else:
-            logging.error('could not find ip')
-            raise ValueError('could not find ip')
+            # check if we have an IP
+            if not ip:
+                logging.error('Could not connect, no ip address provided')
+                raise ValueError('Could not connect, no ip address provided')
 
-        # check if we have a serial before we start connection
-        if len(serial) == 12:
-            hub_serial = serial
-        elif discover_serial:
-            hub_serial = discover_serial+serial
-        else:
-            logging.error('could not find serial')
-            raise ValueError('could not find serial')
+            # check if we have a valid serial before we start connection
+            if len(serial) != 12:
+                logging.error('Could not connect, no valid serial number provided')
+                raise ValueError('Could not connect, no valid serial number provided')
 
-        self.connect_hub(hub_ip, hub_serial)
+            self.connect_hub(ip, serial)
+
+        if not self.client:
+            logging.error("Failed to connect to Ecohub")
+            raise Exception("Failed to connect to Ecohub")
+
+        # start thread for continously receiving new data from hub
+        self.socket_thread = threading.Thread(target=self.socket_receive)
+        self.socket_thread.daemon = True
+        self.socket_thread.start()
+
+        # Fetch all info
+        self.send_command([self.API.GET_ALL_INFO])
+        self.all_received = False
+        while not self.all_received:
+            time.sleep(1)
+
+        logging.info('connected to Nobø Hub')
+
 
     def connect_hub(self, ip, serial):
+        """Attempt initial connection and handshake
+
+        Keyword arguments:
+        ip -- The ecohub ip address to connect to
+        serial -- The complete 12 digit serial number of the hub to connect to
+        """
         # create an ipv4 (AF_INET) socket object using the tcp protocol (SOCK_STREAM)
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.client.settimeout(5)
@@ -197,21 +220,17 @@ class nobo:
             response = self.get_response_short()
             logging.debug('second handshake response: %s', response)
 
-            # if successful handshake, get all info from hub
             if response[0][0] == self.API.HANDSHAKE:
-                # start thread for continously receiving new data from hub
-                self.socket_thread = threading.Thread(target=self.socket_receive)
-                self.socket_thread.daemon = True
-                self.socket_thread.start()
-
-                # Fetch all info 
-                self.send_command([self.API.GET_ALL_INFO])
-                self.all_received = False
-                while not self.all_received:
-                    time.sleep(1)
-
-                logging.info('connected to Nobø Hub')
-
+                # Connect OK, store connection information for later reconnects
+                self.hub_ip = ip
+                self.hub_serial = serial
+                return
+            else:
+                # Something went wrong...
+                logging.error("Final handshake not as expected %s", response[0][0])
+                self.client.close()
+                self.client = None
+                raise Exception("Final handshake not as expected {}".format(response[0][0]))
         else:
             # Reject response: "REJECT <reject code>\r"
             # 0=client command set version too old (or too new!).
@@ -219,9 +238,12 @@ class nobo:
             # 2=Wrong number of arguments.
             # 3=Timestamp incorrectly formatted
             logging.error('connection to hub rejected: {}'.format(response[0]))
+            self.client.close()
+            self.client = None
             raise Exception('connection to hub rejected: {}'.format(response[0]))
 
-    def discover_hubs(self, autodiscover_wait=3.0):
+
+    def discover_hubs(self, serial, ip=None, autodiscover_wait=3.0):
         """Attempts to autodiscover Nobø Ecohubs on the local networkself.
 
         Every two seconds, the Hub sends one UDP broadcast packet on port 10000
@@ -229,7 +251,13 @@ class nobo:
         every packet that contains the magic __NOBOHUB__ identifier. The set
         of (ip, serial) tuples is returned
 
+        Specifying a complete 12 digit serial number or an ip address, will only
+        attempt to discover hubs matching that serial, ip address or both.
+
         Keyword arguments:
+        serial -- The last 3 digits of the Ecohub serial number or the complete
+                  12 digit serial number
+        ip -- ip address to search for Ecohub at (default None)
         autodiscover_wait -- how long to wait for an autodiscover package from
                              the hub (default 3.0)
         """
@@ -251,7 +279,17 @@ class nobo:
                 if broadcast[0][:11] == b'__NOBOHUB__':
                     discover_serial = str(broadcast[0][-9:], 'utf-8')
                     discover_ip = broadcast[1][0]
-                    discovered_hubs.add( (discover_ip, discover_serial) )
+                    if len(serial) == 12:
+                        if discover_serial != serial[0:9]:
+                            # This is not the Ecohub you are looking for
+                            discover_serial = None
+                    else:
+                        discover_serial += serial
+                    if ip and discover_ip != ip:
+                        # This is not the Ecohub you are looking for
+                        discover_ip = None
+                    if discover_ip and discover_serial:
+                        discovered_hubs.add( (discover_ip, discover_serial) )
 
         ds.close()
         return discovered_hubs
