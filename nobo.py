@@ -148,10 +148,6 @@ class nobo:
                 raise Exception("Failed to discover any Nobø Ecohubs")
             (discover_ip, discover_serial) = discovered_hubs.pop()
 
-        # create an ipv4 (AF_INET) socket object using the tcp protocol (SOCK_STREAM)
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client.settimeout(5)
-
         # check if we have an IP
         if ip:
             hub_ip = ip
@@ -160,8 +156,6 @@ class nobo:
         else:
             logging.error('could not find ip')
             raise ValueError('could not find ip')
-        # connect the client - let a timeout exception be raised?
-        self.client.connect((hub_ip, 27779))
 
         # check if we have a serial before we start connection
         if len(serial) == 12:
@@ -171,8 +165,19 @@ class nobo:
         else:
             logging.error('could not find serial')
             raise ValueError('could not find serial')
+
+        self.connect_hub(hub_ip, hub_serial)
+
+    def connect_hub(self, ip, serial):
+        # create an ipv4 (AF_INET) socket object using the tcp protocol (SOCK_STREAM)
+        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client.settimeout(5)
+
+        # connect the client - let a timeout exception be raised?
+        self.client.connect((ip, 27779))
+
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
-        self.send_command([self.API.START, self.API.VERSION, hub_serial, arrow.now().format('YYYYMMDDHHmmss')])
+        self.send_command([self.API.START, self.API.VERSION, serial, arrow.now().format('YYYYMMDDHHmmss')])
 
         # receive the response data (4096 is recommended buffer size)
         response = self.get_response_short()
@@ -184,14 +189,14 @@ class nobo:
             if response[0][1] != self.API.VERSION:
                 #self.send_command([self.API.REJECT])
                 logging.warning('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION))
-                warnings.warn('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION)) #overkill?     
+                warnings.warn('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION)) #overkill?
 
             # send/receive handshake complete
             self.send_command([self.API.HANDSHAKE])
             self.last_handshake = time.time()
             response = self.get_response_short()
             logging.debug('second handshake response: %s', response)
-            
+
             # if successful handshake, get all info from hub
             if response[0][0] == self.API.HANDSHAKE:
                 # start thread for continously receiving new data from hub
@@ -206,13 +211,13 @@ class nobo:
                     time.sleep(1)
 
                 logging.info('connected to Nobø Hub')
-        
+
         else:
             # Reject response: "REJECT <reject code>\r"
             # 0=client command set version too old (or too new!).
             # 1=Hub serial number mismatch.
             # 2=Wrong number of arguments.
-            # 3=Timestamp incorrectly formatted 
+            # 3=Timestamp incorrectly formatted
             logging.error('connection to hub rejected: {}'.format(response[0]))
             raise Exception('connection to hub rejected: {}'.format(response[0]))
 
