@@ -139,19 +139,14 @@ class nobo:
         self.all_received = False
         self.exit_flag = True
 
-        # Every two seconds, the Hub sends one UDP broadcast packet on port 10000 to broadcast IP 255.255.255.255
         discover_ip = None
         discover_serial = None
         if discover:
-            ds = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            ds.bind((' ',10000))
-            broadcast = ds.recvfrom(1024) #TODO: Need to make sure we receive the correct broadcast
-            logging.info('broadcast received: %s', broadcast)
-            # Expected string “__NOBOHUB__123123123”, where 123123123 is replaced with the first 9 digits of the Hub’s serial number.
-            if broadcast[0][:11] == b'__NOBOHUB__':
-                discover_serial = str(broadcast[0][-9:], 'utf-8')
-                discover_ip = broadcast[1][0]
-            ds.close()
+            discovered_hubs = self.discover_hubs()
+            if not discovered_hubs:
+                logging.error("Failed to discover any Nobø Ecohubs")
+                raise Exception("Failed to discover any Nobø Ecohubs")
+            (discover_ip, discover_serial) = discovered_hubs.pop()
 
         # create an ipv4 (AF_INET) socket object using the tcp protocol (SOCK_STREAM)
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -167,7 +162,7 @@ class nobo:
             raise ValueError('could not find ip')
         # connect the client - let a timeout exception be raised?
         self.client.connect((hub_ip, 27779))
-            
+
         # check if we have a serial before we start connection
         if len(serial) == 12:
             hub_serial = serial
@@ -220,6 +215,42 @@ class nobo:
             # 3=Timestamp incorrectly formatted 
             logging.error('connection to hub rejected: {}'.format(response[0]))
             raise Exception('connection to hub rejected: {}'.format(response[0]))
+
+    def discover_hubs(self, autodiscover_wait=3.0):
+        """Attempts to autodiscover Nobø Ecohubs on the local networkself.
+
+        Every two seconds, the Hub sends one UDP broadcast packet on port 10000
+        to broadcast IP 255.255.255.255, we listen for this package, and collect
+        every packet that contains the magic __NOBOHUB__ identifier. The set
+        of (ip, serial) tuples is returned
+
+        Keyword arguments:
+        autodiscover_wait -- how long to wait for an autodiscover package from
+                             the hub (default 3.0)
+        """
+        discovered_hubs = set()
+
+        ds = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ds.settimeout(0.1)
+        ds.bind((' ',10000))
+
+        start_time = time.time()
+        while (start_time + autodiscover_wait > time.time()):
+            try:
+                broadcast = ds.recvfrom(1024) #TODO: Need to make sure we receive the correct broadcast
+            except socket.timeout:
+                broadcast = ""
+            else:
+                logging.info('broadcast received: %s', broadcast)
+                # Expected string “__NOBOHUB__123123123”, where 123123123 is replaced with the first 9 digits of the Hub’s serial number.
+                if broadcast[0][:11] == b'__NOBOHUB__':
+                    discover_serial = str(broadcast[0][-9:], 'utf-8')
+                    discover_ip = broadcast[1][0]
+                    discovered_hubs.add( (discover_ip, discover_serial) )
+
+        ds.close()
+        return discovered_hubs
+
 
     # Function to send a list with command string(s)
     def send_command(self, command_array):
