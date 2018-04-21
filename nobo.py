@@ -377,9 +377,14 @@ class nobo:
         logging.info('receive thread exited')
 
     def response_handler(self, r):
-        # A lot of info is incoming, will end with RESPONSE_STATIC_INFO
+        # All info incoming, clear existing info
         if r[0] == self.API.RESPONSE_SENDING_ALL_INFO:
             self.socket_received_all_info.clear()
+            self.hub_info = {}
+            self.zones = {}
+            self.components = {}
+            self.week_profiles = {}
+            self.overrides = {}
 
         # The added/updated info messages 
         elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_UPDATE_V00]:
