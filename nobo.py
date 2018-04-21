@@ -198,7 +198,7 @@ class nobo:
         self.send_command([self.API.START, self.API.VERSION, serial, arrow.now().format('YYYYMMDDHHmmss')])
 
         # receive the response data (4096 is recommended buffer size)
-        response = self.get_response_short()
+        response = self.get_response()
         logging.debug('first handshake response: %s', response)
 
         # successful response is "HELLO <its version of command set>\r"
@@ -212,7 +212,7 @@ class nobo:
             # send/receive handshake complete
             self.send_command([self.API.HANDSHAKE])
             self.last_handshake = time.time()
-            response = self.get_response_short()
+            response = self.get_response()
             logging.debug('second handshake response: %s', response)
 
             if response[0][0] == self.API.HANDSHAKE:
@@ -265,7 +265,7 @@ class nobo:
         start_time = time.time()
         while (start_time + autodiscover_wait > time.time()):
             try:
-                broadcast = ds.recvfrom(1024) #TODO: Need to make sure we receive the correct broadcast
+                broadcast = ds.recvfrom(1024)
             except socket.timeout:
                 broadcast = ""
             else:
@@ -297,17 +297,17 @@ class nobo:
         self.client.send(message + b'\r')
     
     # Function to receive a string from the hub and reformat string list
-    def get_response_short(self, bufsize=4096):
+    def get_response(self, keep_alive=False, bufsize=4096):
         response = b''
         while response[-1:] != b'\r':
             try:
                 response += self.client.recv(bufsize)
             except socket.timeout:
-                # Keep alive
-                now = time.time()
-                if now - self.last_handshake > 14:
-                    self.send_command([self.API.HANDSHAKE])
-                    self.last_handshake = now
+                if keep_alive: #Handshake needs to be sent every 30 sec, preferably every 14 seconds
+                    now = time.time()
+                    if now - self.last_handshake > 14:
+                        self.send_command([self.API.HANDSHAKE])
+                        self.last_handshake = now
 
         # Handle more than one response in one receive
         response_list = str(response, 'utf-8').split('\r')
@@ -326,7 +326,7 @@ class nobo:
     # Task running in daemon thread
     def socket_receive(self):
         while not self.socket_receive_exit_flag.is_set():
-            resp = self.get_response_short()
+            resp = self.get_response(True)
             for r in resp:
                 logging.debug('received: %s', r)
 
