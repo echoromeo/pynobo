@@ -239,6 +239,25 @@ class nobo:
             self.client = None
             raise Exception('connection to hub rejected: {}'.format(response[0]))
 
+    def reconnect_hub(self):
+        # close socket properly so connect_hub can restart properly
+        if self.client:
+            self.client.close()
+            self.client = None
+
+        # attempt reconnect to the lost hub
+        rediscovered_hub = None
+        while not rediscovered_hub:
+            logging.debug('hub not rediscovered')
+            rediscovered_hub = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip)
+            time.sleep(10)
+        self.connect_hub(self.hub_ip, self.hub_serial)
+        self.socket_connected.set()
+        logging.info('reconnected to Nobø Hub')
+
+        # Update all info
+        self.send_command([self.API.GET_ALL_INFO])
+
     def discover_hubs(self, serial, ip=None, autodiscover_wait=3.0):
         """Attempts to autodiscover Nobø Ecohubs on the local networkself.
 
@@ -289,7 +308,6 @@ class nobo:
 
         ds.close()
         return discovered_hubs
-
 
     # Function to send a list with command string(s)
     def send_command(self, command_array):
@@ -343,70 +361,61 @@ class nobo:
                 for r in resp:
                     logging.debug('received: %s', r)
 
-                    if r[0] in [self.API.HANDSHAKE]:
+                    if r[0] == [self.API.HANDSHAKE]:
                         pass # Handshake, no action needed
-
-                    # A lot of info is incoming, will end with RESPONSE_STATIC_INFO
-                    elif r[0] == self.API.RESPONSE_SENDING_ALL_INFO:
-                        self.socket_received_all_info.clear()
-
-                    # The added/updated info messages 
-                    elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_UPDATE_V00]:
-                        dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
-                        self.zones[dicti['zone_id']] = dicti
-                        logging.info('added/updated zone: %s', dicti['name'])
-
-                    elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_UPDATE_V01]:
-                        dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
-                        self.components[dicti['serial']] = dicti
-                        logging.info('added/updated component: %s', dicti['name'])
-
-                    elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_UPDATE_V02]:
-                        dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
-                        dicti['profile'] = r[-1].split(',')
-                        self.week_profiles[dicti['week_profile_id']] = dicti
-                        logging.info('added/updated week profile: %s', dicti['name'])
-
-                    elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_B03]:
-                        dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
-                        self.overrides[dicti['override_id']] = dicti
-                        logging.info('added/updated override: id %s', dicti['override_id'])
-
-                    elif r[0] in [self.API.RESPONSE_STATIC_INFO, self.API.RESPONSE_UPDATE_V03]:
-                        self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
-                        logging.info('updated hub info: %s', self.hub_info)
-                        if r[0] == self.API.RESPONSE_STATIC_INFO:
-                            self.socket_received_all_info.set()
-
-                    #TODO: Add all the other response_remove commands
-                    elif r[0] == self.API.RESPONSE_REMOVE_S03:
-                        dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
-                        popped_override = self.overrides.pop(dicti['override_id'], None)
-                        logging.info('removed override: id%s', dicti['override_id'])
 
                     elif r[0][0] == 'E':
                         logging.error('error! what did you do? %s', r)
                         #TODO: Raise something here?
 
                     else:
-                        logging.warning('behavior undefined for this command: {}'.format(r))
-                        warnings.warn('behavior undefined for this command: {}'.format(r)) #overkill?        
+                        self.response_handler(r)
+
             else:
-                # close socket properly so connect_hub can restart properly
-                self.client.close()
-                self.client = None
-
-                # attempt reconnect to the lost hub
-                rediscovered_hub = None
-                while not rediscovered_hub:
-                    logging.debug('hub not rediscovered')
-                    rediscovered_hub = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip)
-                    time.sleep(10)
-                self.connect_hub(self.hub_ip, self.hub_serial)
-                self.socket_connected.set()
-                logging.info('reconnected to Nobø Hub')
-
-                # Fetch all info
-                self.send_command([self.API.GET_ALL_INFO])
+                self.reconnect_hub()
 
         logging.info('receive thread exited')
+
+    def response_handler(self, r):
+        # A lot of info is incoming, will end with RESPONSE_STATIC_INFO
+        if r[0] == self.API.RESPONSE_SENDING_ALL_INFO:
+            self.socket_received_all_info.clear()
+
+        # The added/updated info messages 
+        elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_UPDATE_V00]:
+            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
+            self.zones[dicti['zone_id']] = dicti
+            logging.info('added/updated zone: %s', dicti['name'])
+
+        elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_UPDATE_V01]:
+            dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
+            self.components[dicti['serial']] = dicti
+            logging.info('added/updated component: %s', dicti['name'])
+
+        elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_UPDATE_V02]:
+            dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
+            dicti['profile'] = r[-1].split(',')
+            self.week_profiles[dicti['week_profile_id']] = dicti
+            logging.info('added/updated week profile: %s', dicti['name'])
+
+        elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_B03]:
+            dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
+            self.overrides[dicti['override_id']] = dicti
+            logging.info('added/updated override: id %s', dicti['override_id'])
+
+        elif r[0] in [self.API.RESPONSE_STATIC_INFO, self.API.RESPONSE_UPDATE_V03]:
+            self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
+            logging.info('updated hub info: %s', self.hub_info)
+            if r[0] == self.API.RESPONSE_STATIC_INFO:
+                self.socket_received_all_info.set()
+
+        #TODO: Add all the other response_remove commands
+        elif r[0] == self.API.RESPONSE_REMOVE_S03:
+            dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
+            popped_override = self.overrides.pop(dicti['override_id'], None)
+            logging.info('removed override: id%s', dicti['override_id'])
+
+        else:
+            logging.warning('behavior undefined for this command: {}'.format(r))
+            warnings.warn('behavior undefined for this command: {}'.format(r)) #overkill?        
+
