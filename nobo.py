@@ -171,6 +171,8 @@ class nobo:
         self.socket_receive_thread = threading.Thread(target=self.socket_receive, daemon=True)
         self.socket_receive_exit_flag = threading.Event()
         self.socket_received_all_info = threading.Event()
+        self.socket_connected = threading.Event()
+        self.socket_connected.set()
         self.socket_receive_thread.start()
 
         # Fetch all info
@@ -294,7 +296,11 @@ class nobo:
     def send_command(self, command_array):
         logging.debug('sending: %s', command_array)
         message = ' '.join(command_array).encode('utf-8')
-        self.client.send(message + b'\r')
+        try:
+            self.client.send(message + b'\r')
+        except ConnectionResetError:
+            logging.info('lost connection to hub')
+            self.socket_connected.clear()
     
     # Function to receive a string from the hub and reformat string list
     def get_response(self, keep_alive=False, bufsize=4096):
@@ -303,11 +309,18 @@ class nobo:
             try:
                 response += self.client.recv(bufsize)
             except socket.timeout:
-                if keep_alive: #Handshake needs to be sent every 30 sec, preferably every 14 seconds
+                # handshake needs to be sent every < 30 sec, preferably every 14 seconds
+                if keep_alive: 
                     now = time.time()
                     if now - self.last_handshake > 14:
                         self.send_command([self.API.HANDSHAKE])
                         self.last_handshake = now
+                else:
+                    break
+            except ConnectionResetError:
+                logging.info('lost connection to hub')
+                self.socket_connected.clear()
+                break
 
         # Handle more than one response in one receive
         response_list = str(response, 'utf-8').split('\r')
