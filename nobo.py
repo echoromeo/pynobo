@@ -135,10 +135,6 @@ class nobo:
         self.week_profiles = {}
         self.overrides = {}
 
-        # not needed?
-        self.all_received = False
-        self.exit_flag = True
-
         # Get a socket connection, either by scanning or directly
         if discover:
             discovered_hubs = self.discover_hubs(serial=serial, ip=ip)
@@ -172,15 +168,14 @@ class nobo:
             raise Exception("Failed to connect to Ecohub")
 
         # start thread for continously receiving new data from hub
-        self.socket_thread = threading.Thread(target=self.socket_receive)
-        self.socket_thread.daemon = True
-        self.socket_thread.start()
+        self.socket_receive_thread = threading.Thread(target=self.socket_receive, daemon=True)
+        self.socket_receive_exit_flag = threading.Event()
+        self.socket_received_all_info = threading.Event()
+        self.socket_receive_thread.start()
 
         # Fetch all info
         self.send_command([self.API.GET_ALL_INFO])
-        self.all_received = False
-        while not self.all_received:
-            time.sleep(1)
+        self.socket_received_all_info.wait()
 
         logging.info('connected to Nobø Hub')
 
@@ -330,14 +325,17 @@ class nobo:
 
     # Task running in daemon thread
     def socket_receive(self):
-        self.exit_flag = False
-        while not self.exit_flag:
+        while not self.socket_receive_exit_flag.is_set():
             resp = self.get_response_short()
             for r in resp:
                 logging.debug('received: %s', r)
 
-                if r[0] in [self.API.HANDSHAKE, self.API.RESPONSE_SENDING_ALL_INFO]:
-                    pass # Ignoring handshake and H00 messages
+                if r[0] in [self.API.HANDSHAKE]:
+                    pass # Handshake, no action needed
+
+                # A lot of info is incoming, will end with RESPONSE_STATIC_INFO
+                elif r[0] == self.API.RESPONSE_SENDING_ALL_INFO:
+                    self.socket_received_all_info.clear()
 
                 # The added/updated info messages 
                 elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_UPDATE_V00]:
@@ -365,7 +363,7 @@ class nobo:
                     self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
                     logging.info('updated hub info: %s', self.hub_info)
                     if r[0] == self.API.RESPONSE_STATIC_INFO:
-                        self.all_received = True
+                        self.socket_received_all_info.set()
 
                 #TODO: Add all the other response_remove commands
                 elif r[0] == self.API.RESPONSE_REMOVE_S03:
@@ -381,3 +379,4 @@ class nobo:
                     logging.warning('behavior undefined for this command: {}'.format(r))
                     warnings.warn('behavior undefined for this command: {}'.format(r)) #overkill?        
 
+        logging.info('receive thread exited')
