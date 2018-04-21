@@ -135,10 +135,6 @@ class nobo:
         self.week_profiles = {}
         self.overrides = {}
 
-        # not needed?
-        self.all_received = False
-        self.exit_flag = True
-
         # Get a socket connection, either by scanning or directly
         if discover:
             discovered_hubs = self.discover_hubs(serial=serial, ip=ip)
@@ -172,15 +168,16 @@ class nobo:
             raise Exception("Failed to connect to Ecohub")
 
         # start thread for continously receiving new data from hub
-        self.socket_thread = threading.Thread(target=self.socket_receive)
-        self.socket_thread.daemon = True
-        self.socket_thread.start()
+        self.socket_receive_thread = threading.Thread(target=self.socket_receive, daemon=True)
+        self.socket_receive_exit_flag = threading.Event()
+        self.socket_received_all_info = threading.Event()
+        self.socket_connected = threading.Event()
+        self.socket_connected.set()
+        self.socket_receive_thread.start()
 
         # Fetch all info
         self.send_command([self.API.GET_ALL_INFO])
-        self.all_received = False
-        while not self.all_received:
-            time.sleep(1)
+        self.socket_received_all_info.wait()
 
         logging.info('connected to Nobø Hub')
 
@@ -203,7 +200,7 @@ class nobo:
         self.send_command([self.API.START, self.API.VERSION, serial, arrow.now().format('YYYYMMDDHHmmss')])
 
         # receive the response data (4096 is recommended buffer size)
-        response = self.get_response_short()
+        response = self.get_response()
         logging.debug('first handshake response: %s', response)
 
         # successful response is "HELLO <its version of command set>\r"
@@ -217,7 +214,7 @@ class nobo:
             # send/receive handshake complete
             self.send_command([self.API.HANDSHAKE])
             self.last_handshake = time.time()
-            response = self.get_response_short()
+            response = self.get_response()
             logging.debug('second handshake response: %s', response)
 
             if response[0][0] == self.API.HANDSHAKE:
@@ -242,6 +239,24 @@ class nobo:
             self.client = None
             raise Exception('connection to hub rejected: {}'.format(response[0]))
 
+    def reconnect_hub(self):
+        # close socket properly so connect_hub can restart properly
+        if self.client:
+            self.client.close()
+            self.client = None
+
+        # attempt reconnect to the lost hub
+        rediscovered_hub = None
+        while not rediscovered_hub:
+            logging.debug('hub not rediscovered')
+            rediscovered_hub = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip)
+            time.sleep(10)
+        self.connect_hub(self.hub_ip, self.hub_serial)
+        self.socket_connected.set()
+        logging.info('reconnected to Nobø Hub')
+
+        # Update all info
+        self.send_command([self.API.GET_ALL_INFO])
 
     def discover_hubs(self, serial, ip=None, autodiscover_wait=3.0):
         """Attempts to autodiscover Nobø Ecohubs on the local networkself.
@@ -270,7 +285,7 @@ class nobo:
         start_time = time.time()
         while (start_time + autodiscover_wait > time.time()):
             try:
-                broadcast = ds.recvfrom(1024) #TODO: Need to make sure we receive the correct broadcast
+                broadcast = ds.recvfrom(1024)
             except socket.timeout:
                 broadcast = ""
             else:
@@ -294,25 +309,35 @@ class nobo:
         ds.close()
         return discovered_hubs
 
-
     # Function to send a list with command string(s)
     def send_command(self, command_array):
         logging.debug('sending: %s', command_array)
         message = ' '.join(command_array).encode('utf-8')
-        self.client.send(message + b'\r')
+        try:
+            self.client.send(message + b'\r')
+        except ConnectionResetError:
+            logging.info('lost connection to hub')
+            self.socket_connected.clear()
     
     # Function to receive a string from the hub and reformat string list
-    def get_response_short(self, bufsize=4096):
+    def get_response(self, keep_alive=False, bufsize=4096):
         response = b''
         while response[-1:] != b'\r':
             try:
                 response += self.client.recv(bufsize)
             except socket.timeout:
-                # Keep alive
-                now = time.time()
-                if now - self.last_handshake > 14:
-                    self.send_command([self.API.HANDSHAKE])
-                    self.last_handshake = now
+                # handshake needs to be sent every < 30 sec, preferably every 14 seconds
+                if keep_alive: 
+                    now = time.time()
+                    if now - self.last_handshake > 14:
+                        self.send_command([self.API.HANDSHAKE])
+                        self.last_handshake = now
+                else:
+                    break
+            except ConnectionResetError:
+                logging.info('lost connection to hub')
+                self.socket_connected.clear()
+                break
 
         # Handle more than one response in one receive
         response_list = str(response, 'utf-8').split('\r')
@@ -330,54 +355,72 @@ class nobo:
 
     # Task running in daemon thread
     def socket_receive(self):
-        self.exit_flag = False
-        while not self.exit_flag:
-            resp = self.get_response_short()
-            for r in resp:
-                logging.debug('received: %s', r)
+        while not self.socket_receive_exit_flag.is_set():
+            if self.socket_connected.is_set():
+                resp = self.get_response(True)
+                for r in resp:
+                    logging.debug('received: %s', r)
 
-                if r[0] in [self.API.HANDSHAKE, self.API.RESPONSE_SENDING_ALL_INFO]:
-                    pass # Ignoring handshake and H00 messages
+                    if r[0] == [self.API.HANDSHAKE]:
+                        pass # Handshake, no action needed
 
-                # The added/updated info messages 
-                elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_UPDATE_V00]:
-                    dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
-                    self.zones[dicti['zone_id']] = dicti
-                    logging.info('added/updated zone: %s', dicti['name'])
+                    elif r[0][0] == 'E':
+                        logging.error('error! what did you do? %s', r)
+                        #TODO: Raise something here?
 
-                elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_UPDATE_V01]:
-                    dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
-                    self.components[dicti['serial']] = dicti
-                    logging.info('added/updated component: %s', dicti['name'])
+                    else:
+                        self.response_handler(r)
 
-                elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_UPDATE_V02]:
-                    dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
-                    dicti['profile'] = r[-1].split(',')
-                    self.week_profiles[dicti['week_profile_id']] = dicti
-                    logging.info('added/updated week profile: %s', dicti['name'])
+            else:
+                self.reconnect_hub()
 
-                elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_B03]:
-                    dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
-                    self.overrides[dicti['override_id']] = dicti
-                    logging.info('added/updated override: id %s', dicti['override_id'])
+        logging.info('receive thread exited')
 
-                elif r[0] in [self.API.RESPONSE_STATIC_INFO, self.API.RESPONSE_UPDATE_V03]:
-                    self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
-                    logging.info('updated hub info: %s', self.hub_info)
-                    if r[0] == self.API.RESPONSE_STATIC_INFO:
-                        self.all_received = True
+    def response_handler(self, r):
+        # All info incoming, clear existing info
+        if r[0] == self.API.RESPONSE_SENDING_ALL_INFO:
+            self.socket_received_all_info.clear()
+            self.hub_info = {}
+            self.zones = {}
+            self.components = {}
+            self.week_profiles = {}
+            self.overrides = {}
 
-                #TODO: Add all the other response_remove commands
-                elif r[0] == self.API.RESPONSE_REMOVE_S03:
-                    dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
-                    popped_override = self.overrides.pop(dicti['override_id'], None)
-                    logging.info('removed override: id%s', dicti['override_id'])
+        # The added/updated info messages 
+        elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_UPDATE_V00]:
+            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
+            self.zones[dicti['zone_id']] = dicti
+            logging.info('added/updated zone: %s', dicti['name'])
 
-                elif r[0][0] == 'E':
-                    logging.error('error! what did you do? %s', r)
-                    #TODO: Raise something here?
+        elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_UPDATE_V01]:
+            dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
+            self.components[dicti['serial']] = dicti
+            logging.info('added/updated component: %s', dicti['name'])
 
-                else:
-                    logging.warning('behavior undefined for this command: {}'.format(r))
-                    warnings.warn('behavior undefined for this command: {}'.format(r)) #overkill?        
+        elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_UPDATE_V02]:
+            dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
+            dicti['profile'] = r[-1].split(',')
+            self.week_profiles[dicti['week_profile_id']] = dicti
+            logging.info('added/updated week profile: %s', dicti['name'])
+
+        elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_B03]:
+            dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
+            self.overrides[dicti['override_id']] = dicti
+            logging.info('added/updated override: id %s', dicti['override_id'])
+
+        elif r[0] in [self.API.RESPONSE_STATIC_INFO, self.API.RESPONSE_UPDATE_V03]:
+            self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
+            logging.info('updated hub info: %s', self.hub_info)
+            if r[0] == self.API.RESPONSE_STATIC_INFO:
+                self.socket_received_all_info.set()
+
+        #TODO: Add all the other response_remove commands
+        elif r[0] == self.API.RESPONSE_REMOVE_S03:
+            dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
+            popped_override = self.overrides.pop(dicti['override_id'], None)
+            logging.info('removed override: id%s', dicti['override_id'])
+
+        else:
+            logging.warning('behavior undefined for this command: {}'.format(r))
+            warnings.warn('behavior undefined for this command: {}'.format(r)) #overkill?        
 
