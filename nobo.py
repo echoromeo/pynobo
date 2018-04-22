@@ -361,7 +361,7 @@ class nobo:
                 for r in resp:
                     logging.debug('received: %s', r)
 
-                    if r[0] == [self.API.HANDSHAKE]:
+                    if r[0] == self.API.HANDSHAKE:
                         pass # Handshake, no action needed
 
                     elif r[0][0] == 'E':
