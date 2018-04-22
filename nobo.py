@@ -28,21 +28,21 @@ class nobo:
         ADD_COMPONENT = 'A01'       # Adds Component to hub database: A01 <Serial  number>  <Status> <Name> <Reverse on/off?> <Zoneld> <Active override Id> <Temperature sensor for zone>
         ADD_WEEK_PROFILE = 'A02'    # Adds Week Profile to hub database: A02 <Week profile id> <Name> <Profile>
         ADD_OVERRIDE = 'A03'        # Adds an override to hub database: A03 <Id> <Mode> <Type> <End time> <Start time> <Override target> <Override target ID>
-        RESPONSE_ADD_B00 = 'B00'
-        RESPONSE_ADD_B01 = 'B01'
-        RESPONSE_ADD_B02 = 'B02'
-        RESPONSE_ADD_B03 = 'B03'
+        RESPONSE_ADD_ZONE = 'B00'
+        RESPONSE_ADD_COMPONENT = 'B01'
+        RESPONSE_ADD_WEEK_PROFILE = 'B02'
+        RESPONSE_ADD_OVERRIDE = 'B03'
 
         UPDATE_ZONE = 'U00'             # Updates Zone to hub database: U00 <Zone id> <Name> <Active week profile id> <Comfort temperature> <Eco temperature> <Allow overrides> <Active override id>
         UPDATE_COMPONENT = 'U01'        # Updates Component to hub database: U01 <Serial number> <Status> <Name> <Reverse on/off?> <Zoneld> <Active override Id> <Temperature sensor for zone>
         UPDATE_WEEK_PROFILE = 'U02'     # Updates Week Profile to hub database: U02 <Week profile id> <Name> <Profile>
         UPDATE_HUB_INFO = 'U03'         # Updates hub information: U83 <Snr> <Name> <DefaultAwayOverrideLength> <ActiveOverrideid> <Softwareversion> <Hardwareversion> <Producti????
         UPDATE_INTERNET_ACCESS = 'U06'  # Updates hub internet connectivity function and encryption key (LAN only): U86 <Enable internet access> <Encryption key> <Reserved 1> <Reserved 2>
-        RESPONSE_UPDATE_V00 = 'V00'
-        RESPONSE_UPDATE_V01 = 'V01'
-        RESPONSE_UPDATE_V02 = 'V02'
-        RESPONSE_UPDATE_V03 = 'V03'
-        RESPONSE_UPDATE_V06 = 'V06'
+        RESPONSE_UPDATE_ZONE = 'V00'
+        RESPONSE_UPDATE_COMPONENT = 'V01'
+        RESPONSE_UPDATE_WEEK_PROFILE = 'V02'
+        RESPONSE_UPDATE_HUB_INFO = 'V03'
+        RESPONSE_UPDATE_INTERNET_ACCESS = 'V06'
 
         # Removes a Zone from the hub's internal database. All values except Zone lD is ignored. 
         # Any Components in the Zone are also deleted (and S02 Component deleted messages arc sent for the deleted Components). 
@@ -54,16 +54,15 @@ class nobo:
         # R01 <Serial number> <Status> <Name> <Reverse on/off?> <Zoneid> <Active override Id> <Temperature sensor for zone>
         REMOVE_COMPONENT = 'R01'
 
-        
         # Removes a WeekProfile from the hub's intemal  database. All values except  Week Profile lD is ignored. 
         # Any Zones that are set to use the Week Profile are set to use the default Week Profile in stead (and V00 Zone updated messages are sent).
         # R02 <Week profile id> <Name> <Profile>
         REMOVE_WEEK_PROFILE = 'R02'
 
-        RESPONSE_REMOVE_S00 = 'S00'
-        RESPONSE_REMOVE_S01 = 'S01'
-        RESPONSE_REMOVE_S02 = 'S02'
-        RESPONSE_REMOVE_S03 = 'S03'
+        RESPONSE_REMOVE_ZONE = 'S00'
+        RESPONSE_REMOVE_COMPONENT = 'S01'
+        RESPONSE_REMOVE_WEEK_PROFILE = 'S02'
+        RESPONSE_REMOVE_OVERRIDE = 'S03'
 
         # Gets all information from hub. Will trigger a sequence  of series of one HOO message, zero or more 
         # HOI, zero or more H02, zero or more Y02, zero or more H03, zero or more H04 commands, one V06 
@@ -92,7 +91,7 @@ class nobo:
         RESPONSE_COMPONENT_INFO = 'H02'     # Response with Component info, one per message: H02 <Serial number> <Status> <Name> <Reverse on/off?> <Zoneld> <Active override Id> <Temperature sensor for zone>
         RESPONSE_WEEK_PROFILE_INFO = 'H03'  # Response with Week Profile info, one per message: H03 <Week profile id> <Name> <Profile>
         RESPONSE_OVERRIDE_INFO = 'H04'      # Response with override info, one per message: H04 <Id> <Mode> <Type> <End time> <Start time> <Override target> <Override target ID>
-        RESPONSE_STATIC_INFO = 'H05'        # G00 request complete signal + static info: H05 <Snr> <Name> <DefaultAwayOverrideLength> <ActiveOverrideid> <SoftwareVersion> <HardwareVersion> <Producti???
+        RESPONSE_HUB_INFO = 'H05'           # G00 request complete signal + static info: H05 <Snr> <Name> <DefaultAwayOverrideLength> <ActiveOverrideid> <SoftwareVersion> <HardwareVersion> <Producti???
 
         EXECUTE_START_SEARCH = 'X00'
         EXECUTE_STOP_SEARCH = 'X01'
@@ -134,6 +133,7 @@ class nobo:
         self.components = {}
         self.week_profiles = {}
         self.overrides = {}
+        self.temperatures = {}
 
         # Get a socket connection, either by scanning or directly
         if discover:
@@ -387,40 +387,68 @@ class nobo:
             self.overrides = {}
 
         # The added/updated info messages 
-        elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_UPDATE_V00]:
+        elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_ADD_ZONE ,self.API.RESPONSE_UPDATE_ZONE]:
             dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
             self.zones[dicti['zone_id']] = dicti
             logging.info('added/updated zone: %s', dicti['name'])
 
-        elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_UPDATE_V01]:
+        elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_ADD_COMPONENT ,self.API.RESPONSE_UPDATE_COMPONENT]:
             dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
             self.components[dicti['serial']] = dicti
             logging.info('added/updated component: %s', dicti['name'])
 
-        elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_UPDATE_V02]:
+        elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_ADD_WEEK_PROFILE, self.API.RESPONSE_UPDATE_WEEK_PROFILE]:
             dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
             dicti['profile'] = r[-1].split(',')
             self.week_profiles[dicti['week_profile_id']] = dicti
             logging.info('added/updated week profile: %s', dicti['name'])
 
-        elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_B03]:
+        elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_OVERRIDE]:
             dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             self.overrides[dicti['override_id']] = dicti
             logging.info('added/updated override: id %s', dicti['override_id'])
 
-        elif r[0] in [self.API.RESPONSE_STATIC_INFO, self.API.RESPONSE_UPDATE_V03]:
+        elif r[0] in [self.API.RESPONSE_HUB_INFO, self.API.RESPONSE_UPDATE_HUB_INFO]:
             self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
             logging.info('updated hub info: %s', self.hub_info)
-            if r[0] == self.API.RESPONSE_STATIC_INFO:
+            if r[0] == self.API.RESPONSE_HUB_INFO:
                 self.socket_received_all_info.set()
 
-        #TODO: Add all the other response_remove commands
-        elif r[0] == self.API.RESPONSE_REMOVE_S03:
+        # The removed info messages 
+        elif r[0] == self.API.RESPONSE_REMOVE_ZONE:
+            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
+            popped_zone = self.zones.pop(dicti['zone_id'], None)
+            logging.info('removed zone: %s', dicti['name'])
+
+        elif r[0] == self.API.RESPONSE_REMOVE_COMPONENT:
+            dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
+            popped_component = self.components.pop(dicti['serial'], None)
+            logging.info('removed component: %s', dicti['name'])
+
+        elif r[0] == self.API.RESPONSE_REMOVE_WEEK_PROFILE:
+            dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
+            popped_profile = self.week_profiles.pop(dicti['week_profile_id'], None)
+            logging.info('removed week profile: %s', dicti['name'])
+
+        elif r[0] == self.API.RESPONSE_REMOVE_OVERRIDE:
             dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             popped_override = self.overrides.pop(dicti['override_id'], None)
             logging.info('removed override: id%s', dicti['override_id'])
 
+        # Component temperature data
+        elif r[0] == self.API.RESPONSE_COMPONENT_TEMP:
+            self.temperatures[r[1]] = r[2]
+            logging.info('updated temperature from {}: {}'.format(r[1], r[2]))
+
+        # Internet settings
+        elif r[0] == self.API.RESPONSE_UPDATE_INTERNET_ACCESS:
+            internet_access = r[1]
+            encryption_key = 0
+            for i in range(2, 18):
+                encryption_key = (encryption_key << 8) + int(r[i])
+            logging.debug('internet enabled: {}, key: {}'.format(internet_access, hex(encryption_key)))
+
         else:
-            logging.warning('behavior undefined for this command: {}'.format(r))
-            warnings.warn('behavior undefined for this command: {}'.format(r)) #overkill?        
+            logging.warning('behavior undefined for this response: {}'.format(r))
+            warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?        
 
