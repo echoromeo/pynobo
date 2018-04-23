@@ -128,6 +128,7 @@ class nobo:
         STRUCT_KEYS_OVERRIDE = ['override_id', 'mode', 'type', 'end_time', 'start_time', 'target_type', 'target_id']
 
     def __init__(self, serial, ip=None, discover=True):
+        self.logger = logging.getLogger(__name__)
         self.hub_info = {}
         self.zones = {}
         self.components = {}
@@ -139,7 +140,7 @@ class nobo:
         if discover:
             discovered_hubs = self.discover_hubs(serial=serial, ip=ip)
             if not discovered_hubs:
-                logging.error("Failed to discover any Nobø Ecohubs")
+                self.logger.error("Failed to discover any Nobø Ecohubs")
                 raise Exception("Failed to discover any Nobø Ecohubs")
             while discovered_hubs:
                 (discover_ip, discover_serial) = discovered_hubs.pop()
@@ -148,23 +149,23 @@ class nobo:
                     break  # We connect to the first valid hub, no reason to try the rest
                 except Exception as e:
                     # This might not have been the Ecohub we wanted (wrong serial)
-                    logging.warning("Could not connect to {}:{} - {}".format(
-                                    discover_ip, discover_serial, e))
+                    self.logger.warning("Could not connect to {}:{} - {}".format(
+                                        discover_ip, discover_serial, e))
         else:
             # check if we have an IP
             if not ip:
-                logging.error('Could not connect, no ip address provided')
+                self.logger.error('Could not connect, no ip address provided')
                 raise ValueError('Could not connect, no ip address provided')
 
             # check if we have a valid serial before we start connection
             if len(serial) != 12:
-                logging.error('Could not connect, no valid serial number provided')
+                self.logger.error('Could not connect, no valid serial number provided')
                 raise ValueError('Could not connect, no valid serial number provided')
 
             self.connect_hub(ip, serial)
 
         if not self.client:
-            logging.error("Failed to connect to Ecohub")
+            self.logger.error("Failed to connect to Ecohub")
             raise Exception("Failed to connect to Ecohub")
 
         # start thread for continously receiving new data from hub
@@ -179,7 +180,7 @@ class nobo:
         self.send_command([self.API.GET_ALL_INFO])
         self.socket_received_all_info.wait()
 
-        logging.info('connected to Nobø Hub')
+        self.logger.info('connected to Nobø Hub')
 
 
     def connect_hub(self, ip, serial):
@@ -201,21 +202,21 @@ class nobo:
 
         # receive the response data (4096 is recommended buffer size)
         response = self.get_response()
-        logging.debug('first handshake response: %s', response)
+        self.logger.debug('first handshake response: %s', response)
 
         # successful response is "HELLO <its version of command set>\r"
         if response[0][0] == self.API.START:
             # send “REJECT\r” if command set is not supported? No need to abort if Hub is ok with the mismatch?
             if response[0][1] != self.API.VERSION:
                 #self.send_command([self.API.REJECT])
-                logging.warning('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION))
+                self.logger.warning('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION))
                 warnings.warn('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION)) #overkill?
 
             # send/receive handshake complete
             self.send_command([self.API.HANDSHAKE])
             self.last_handshake = time.time()
             response = self.get_response()
-            logging.debug('second handshake response: %s', response)
+            self.logger.debug('second handshake response: %s', response)
 
             if response[0][0] == self.API.HANDSHAKE:
                 # Connect OK, store connection information for later reconnects
@@ -224,7 +225,7 @@ class nobo:
                 return
             else:
                 # Something went wrong...
-                logging.error("Final handshake not as expected %s", response[0][0])
+                self.logger.error("Final handshake not as expected %s", response[0][0])
                 self.client.close()
                 self.client = None
                 raise Exception("Final handshake not as expected {}".format(response[0][0]))
@@ -234,7 +235,7 @@ class nobo:
             # 1=Hub serial number mismatch.
             # 2=Wrong number of arguments.
             # 3=Timestamp incorrectly formatted
-            logging.error('connection to hub rejected: {}'.format(response[0]))
+            self.logger.error('connection to hub rejected: {}'.format(response[0]))
             self.client.close()
             self.client = None
             raise Exception('connection to hub rejected: {}'.format(response[0]))
@@ -248,12 +249,12 @@ class nobo:
         # attempt reconnect to the lost hub
         rediscovered_hub = None
         while not rediscovered_hub:
-            logging.debug('hub not rediscovered')
+            self.logger.debug('hub not rediscovered')
             rediscovered_hub = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip)
             time.sleep(10)
         self.connect_hub(self.hub_ip, self.hub_serial)
         self.socket_connected.set()
-        logging.info('reconnected to Nobø Hub')
+        self.logger.info('reconnected to Nobø Hub')
 
         # Update all info
         self.send_command([self.API.GET_ALL_INFO])
@@ -289,7 +290,7 @@ class nobo:
             except socket.timeout:
                 broadcast = ""
             else:
-                logging.info('broadcast received: %s', broadcast)
+                self.logger.info('broadcast received: %s', broadcast)
                 # Expected string “__NOBOHUB__123123123”, where 123123123 is replaced with the first 9 digits of the Hub’s serial number.
                 if broadcast[0][:11] == b'__NOBOHUB__':
                     discover_serial = str(broadcast[0][-9:], 'utf-8')
@@ -311,14 +312,14 @@ class nobo:
 
     # Function to send a list with command string(s)
     def send_command(self, command_array):
-        logging.debug('sending: %s', command_array)
+        self.logger.debug('sending: %s', command_array)
         message = ' '.join(command_array).encode('utf-8')
         try:
             self.client.send(message + b'\r')
         except ConnectionResetError:
-            logging.info('lost connection to hub')
+            self.logger.info('lost connection to hub')
             self.socket_connected.clear()
-    
+
     # Function to receive a string from the hub and reformat string list
     def get_response(self, keep_alive=False, bufsize=4096):
         response = b''
@@ -327,7 +328,7 @@ class nobo:
                 response += self.client.recv(bufsize)
             except socket.timeout:
                 # handshake needs to be sent every < 30 sec, preferably every 14 seconds
-                if keep_alive: 
+                if keep_alive:
                     now = time.time()
                     if now - self.last_handshake > 14:
                         self.send_command([self.API.HANDSHAKE])
@@ -335,7 +336,7 @@ class nobo:
                 else:
                     break
             except ConnectionResetError:
-                logging.info('lost connection to hub')
+                self.logger.info('lost connection to hub')
                 self.socket_connected.clear()
                 break
 
@@ -359,13 +360,13 @@ class nobo:
             if self.socket_connected.is_set():
                 resp = self.get_response(True)
                 for r in resp:
-                    logging.debug('received: %s', r)
+                    self.logger.debug('received: %s', r)
 
                     if r[0] == self.API.HANDSHAKE:
                         pass # Handshake, no action needed
 
                     elif r[0][0] == 'E':
-                        logging.error('error! what did you do? %s', r)
+                        self.logger.error('error! what did you do? %s', r)
                         #TODO: Raise something here?
 
                     else:
@@ -374,7 +375,7 @@ class nobo:
             else:
                 self.reconnect_hub()
 
-        logging.info('receive thread exited')
+        self.logger.info('receive thread exited')
 
     def response_handler(self, r):
         # All info incoming, clear existing info
@@ -386,59 +387,59 @@ class nobo:
             self.week_profiles = {}
             self.overrides = {}
 
-        # The added/updated info messages 
+        # The added/updated info messages
         elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_ADD_ZONE ,self.API.RESPONSE_UPDATE_ZONE]:
             dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
             self.zones[dicti['zone_id']] = dicti
-            logging.info('added/updated zone: %s', dicti['name'])
+            self.logger.info('added/updated zone: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_ADD_COMPONENT ,self.API.RESPONSE_UPDATE_COMPONENT]:
             dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
             self.components[dicti['serial']] = dicti
-            logging.info('added/updated component: %s', dicti['name'])
+            self.logger.info('added/updated component: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_ADD_WEEK_PROFILE, self.API.RESPONSE_UPDATE_WEEK_PROFILE]:
             dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
             dicti['profile'] = r[-1].split(',')
             self.week_profiles[dicti['week_profile_id']] = dicti
-            logging.info('added/updated week profile: %s', dicti['name'])
+            self.logger.info('added/updated week profile: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_OVERRIDE]:
             dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             self.overrides[dicti['override_id']] = dicti
-            logging.info('added/updated override: id %s', dicti['override_id'])
+            self.logger.info('added/updated override: id %s', dicti['override_id'])
 
         elif r[0] in [self.API.RESPONSE_HUB_INFO, self.API.RESPONSE_UPDATE_HUB_INFO]:
             self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
-            logging.info('updated hub info: %s', self.hub_info)
+            self.logger.info('updated hub info: %s', self.hub_info)
             if r[0] == self.API.RESPONSE_HUB_INFO:
                 self.socket_received_all_info.set()
 
-        # The removed info messages 
+        # The removed info messages
         elif r[0] == self.API.RESPONSE_REMOVE_ZONE:
             dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
             popped_zone = self.zones.pop(dicti['zone_id'], None)
-            logging.info('removed zone: %s', dicti['name'])
+            self.logger.info('removed zone: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_COMPONENT:
             dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
             popped_component = self.components.pop(dicti['serial'], None)
-            logging.info('removed component: %s', dicti['name'])
+            self.logger.info('removed component: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_WEEK_PROFILE:
             dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
             popped_profile = self.week_profiles.pop(dicti['week_profile_id'], None)
-            logging.info('removed week profile: %s', dicti['name'])
+            self.logger.info('removed week profile: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_OVERRIDE:
             dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             popped_override = self.overrides.pop(dicti['override_id'], None)
-            logging.info('removed override: id%s', dicti['override_id'])
+            self.logger.info('removed override: id%s', dicti['override_id'])
 
         # Component temperature data
         elif r[0] == self.API.RESPONSE_COMPONENT_TEMP:
             self.temperatures[r[1]] = r[2]
-            logging.info('updated temperature from {}: {}'.format(r[1], r[2]))
+            self.logger.info('updated temperature from {}: {}'.format(r[1], r[2]))
 
         # Internet settings
         elif r[0] == self.API.RESPONSE_UPDATE_INTERNET_ACCESS:
@@ -446,9 +447,8 @@ class nobo:
             encryption_key = 0
             for i in range(2, 18):
                 encryption_key = (encryption_key << 8) + int(r[i])
-            logging.debug('internet enabled: {}, key: {}'.format(internet_access, hex(encryption_key)))
+            self.logger.debug('internet enabled: {}, key: {}'.format(internet_access, hex(encryption_key)))
 
         else:
-            logging.warning('behavior undefined for this response: {}'.format(r))
-            warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?        
-
+            self.logger.warning('behavior undefined for this response: {}'.format(r))
+            warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?
