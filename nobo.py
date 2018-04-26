@@ -8,7 +8,6 @@
 # Example: glen = nobo('123') or glen = nobo('123123123123', '10.0.0.128', False)
 
 import time
-import arrow
 import warnings
 import logging
 import socket
@@ -198,7 +197,7 @@ class nobo:
         self.client.connect((ip, 27779))
 
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
-        self.send_command([self.API.START, self.API.VERSION, serial, arrow.now().format('YYYYMMDDHHmmss')])
+        self.send_command([self.API.START, self.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
 
         # receive the response data (4096 is recommended buffer size)
         response = self.get_response()
