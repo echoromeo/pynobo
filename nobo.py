@@ -348,11 +348,6 @@ class nobo:
 
         return response
 
-    # Function to override hub/zones/components. "Override" to mode 0 to disable an existing override?
-    def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
-        command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
-        self.send_command(command)
-
     # Task running in daemon thread
     def socket_receive(self):
         while not self.socket_receive_exit_flag.is_set():
@@ -451,3 +446,8 @@ class nobo:
         else:
             self.logger.warning('behavior undefined for this response: {}'.format(r))
             warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?
+
+    # Function to override hub/zones/components. "Override" to mode 0 to disable an existing override
+    def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
+        command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
+        self.send_command(command)
