@@ -467,6 +467,22 @@ class nobo:
     def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         self.send_command(command)
+    
+    # TODO: Test this!
+    def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
+        command = [self.API.UPDATE_ZONE, zone_id, self.zones[zone_id]['name'], self.zones[zone_id]['week_profile_id'],
+            self.zones[zone_id]['temp_comfort_c'], self.zones[zone_id]['temp_eco_c'], self.zones[zone_id]['override_allowed'], '-1']
+        if name:
+            command[2] = name
+        if week_profile_id:
+            command[3] = week_profile_id
+        if temp_comfort_c:
+            command[4] = temp_comfort_c
+        if temp_eco_c:
+            command[5] = temp_eco_c
+        if override_allowed:
+            command[6] = override_allowed
+        self.send_command(command)
 
     # Function to find the status of a profile at a certain time in the week
     def get_week_profile_status(self, profile, day, time):
