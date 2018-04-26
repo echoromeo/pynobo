@@ -103,7 +103,7 @@ class nobo:
 
         RESPONSE_ERROR = 'E00'              # Other error messages than E00 may also be sent from the Hub (E01, E02 etc.): E00 <command> <message>
 
-        OVERRIDE_MODE_OFF = '0'
+        OVERRIDE_MODE_NORMAL = '0'
         OVERRIDE_MODE_COMFORT = '1'
         OVERRIDE_MODE_ECO = '2'
         OVERRIDE_MODE_AWAY = '3'
@@ -120,11 +120,27 @@ class nobo:
         OVERRIDE_ID_NONE = '-1'
         OVERRIDE_ID_HUB = '-1'
 
+        WEEK_PROFILE_STATE_ECO = '0'
+        WEEK_PROFILE_STATE_COMFORT = '1'
+        WEEK_PROFILE_STATE_AWAY = '2'
+        WEEK_PROFILE_STATE_OFF = '4'
+
         STRUCT_KEYS_HUB = ['serial', 'name', 'default_away_override_length', 'override_id', 'software_version', 'hardware_version', 'production_date']
         STRUCT_KEYS_ZONE = ['zone_id', 'name', 'week_profile_id', 'temp_comfort_c', 'temp_eco_c', 'override_allowed', 'override_id']
         STRUCT_KEYS_COMPONENT = ['serial', 'status', 'name', 'reverse_onoff', 'zone_id', 'override_id', 'tempsensor_for_zone_id']
         STRUCT_KEYS_WEEK_PROFILE = ['week_profile_id', 'name', 'profile'] # profile is minimum 7 and probably more values separated by comma
         STRUCT_KEYS_OVERRIDE = ['override_id', 'mode', 'type', 'end_time', 'start_time', 'target_type', 'target_id']
+
+        NAME_OFF = 'off'
+        NAME_AWAY = 'away'
+        NAME_ECO = 'eco'
+        NAME_COMFORT = 'comfort'
+        NAME_NORMAL = 'normal'
+
+        DICT_OVERRIDE_MODE_TO_NAME = {OVERRIDE_MODE_NORMAL : NAME_NORMAL, OVERRIDE_MODE_COMFORT : NAME_COMFORT, OVERRIDE_MODE_ECO : NAME_ECO, OVERRIDE_MODE_AWAY : NAME_AWAY}
+        DICT_WEEK_PROFILE_STATUS_TO_NAME = {WEEK_PROFILE_STATE_ECO : NAME_ECO, WEEK_PROFILE_STATE_COMFORT : NAME_COMFORT, WEEK_PROFILE_STATE_AWAY : NAME_AWAY, WEEK_PROFILE_STATE_OFF : NAME_OFF}
+        DICT_NAME_TO_OVERRIDE_MODE = {NAME_NORMAL : OVERRIDE_MODE_NORMAL, NAME_COMFORT : OVERRIDE_MODE_COMFORT, NAME_ECO : OVERRIDE_MODE_ECO, NAME_AWAY : OVERRIDE_MODE_AWAY}
+        DICT_NAME_TO_WEEK_PROFILE_STATUS = {NAME_ECO : WEEK_PROFILE_STATE_ECO, NAME_COMFORT : WEEK_PROFILE_STATE_COMFORT, NAME_AWAY : WEEK_PROFILE_STATE_AWAY, NAME_OFF : WEEK_PROFILE_STATE_OFF}
 
     def __init__(self, serial, ip=None, discover=True):
         self.logger = logging.getLogger(__name__)
@@ -451,3 +467,41 @@ class nobo:
     def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         self.send_command(command)
+
+    # Function to find the status of a profile at a certain time in the week
+    def get_week_profile_status(self, profile, day, time):
+        status = profile[0][-1]
+        weekday = 0
+        for timestamp in profile[1:]:
+            if timestamp[:4] == '0000':
+                weekday += 1
+            if weekday == day:
+                if int(timestamp[:4]) <= time:
+                    status = timestamp[-1]
+                else:
+                    break
+        self.logger.debug('Status weekday {}, at {} is {}'.format(day, time, self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]))
+        return self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
+
+	# Function to find status in a zone right now
+    def get_current_zone_status(self, zone_id, now=time.localtime()):
+        current_status = ''
+        if self.zones[zone_id]['override_allowed'] == '1':
+            for o in self.overrides:
+                if self.overrides[o]['mode'] == '0':
+                    continue
+                elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_ZONE:
+                    if self.overrides[o]['target_id'] == zone_id:
+                        current_status = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+                        break
+                elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_GLOBAL:
+                    current_status = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+
+        if not current_status:
+            current_profile_id = self.zones[zone_id]['week_profile_id']
+            current_weekday = now.tm_wday
+            current_time = (now.tm_hour*100) + now.tm_min
+            current_status = self.get_week_profile_status(self.week_profiles[current_profile_id]['profile'], current_weekday, current_time)
+                
+        self.logger.debug('Current status for zone {} is {}'.format(self.zones[zone_id]['name'], current_status))
+        return current_status
