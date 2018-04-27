@@ -471,8 +471,10 @@ class nobo:
     
     # Function to update name, week profile, temperature or override allowing for a zone
     def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
-        command = [self.API.UPDATE_ZONE, zone_id, self.zones[zone_id]['name'], self.zones[zone_id]['week_profile_id'],
-            self.zones[zone_id]['temp_comfort_c'], self.zones[zone_id]['temp_eco_c'], self.zones[zone_id]['override_allowed'], self.API.OVERRIDE_ID_NONE]
+        # Initialize command with the current zone settings
+        command = [self.API.UPDATE_ZONE] + list(self.zones[zone_id].values()) + [self.API.OVERRIDE_ID_NONE]
+        
+        # Replace command with arguments that are not None. Is there a more elegant way?
         if name:
             command[2] = name
         if week_profile_id:
@@ -483,11 +485,12 @@ class nobo:
             command[5] = temp_eco_c
         if override_allowed:
             command[6] = override_allowed
+
         self.send_command(command)
 
     # Function to find the status of a profile at a certain time in the week. Monday is day 0
     def get_week_profile_status(self, profile, day, time):
-        # profile[0] is always 0000x, so that is the initial status
+        # profile[0] is always 0000x, so this provides the initial status
         status = profile[0][-1]
         weekday = 0
         for timestamp in profile[1:]:
