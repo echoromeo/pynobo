@@ -468,7 +468,7 @@ class nobo:
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         self.send_command(command)
     
-    # TODO: Test this!
+    # Function to update name, week profile, temperature or override allowing for a zone
     def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
         command = [self.API.UPDATE_ZONE, zone_id, self.zones[zone_id]['name'], self.zones[zone_id]['week_profile_id'],
             self.zones[zone_id]['temp_comfort_c'], self.zones[zone_id]['temp_eco_c'], self.zones[zone_id]['override_allowed'], '-1']
@@ -484,8 +484,9 @@ class nobo:
             command[6] = override_allowed
         self.send_command(command)
 
-    # Function to find the status of a profile at a certain time in the week
+    # Function to find the status of a profile at a certain time in the week. Monday is day 0
     def get_week_profile_status(self, profile, day, time):
+        # profile[0] is always 0000x, so that is the initial status
         status = profile[0][-1]
         weekday = 0
         for timestamp in profile[1:]:
@@ -496,28 +497,31 @@ class nobo:
                     status = timestamp[-1]
                 else:
                     break
-        self.logger.debug('Status weekday {}, at {} is {}'.format(day, time, self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]))
-        return self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
+        self.logger.debug('Status at {} on weekday {} is {}'.format(day, time, status))
+        return status
 
-	# Function to find status in a zone right now
-    def get_current_zone_status(self, zone_id, now=time.localtime()):
-        current_status = ''
+	# Function to find mode in a zone right now
+    def get_current_zone_mode(self, zone_id, now=time.localtime()):
+        current_time = (now.tm_hour*100) + now.tm_min
+        current_mode = 'unknown'
+        
         if self.zones[zone_id]['override_allowed'] == '1':
             for o in self.overrides:
                 if self.overrides[o]['mode'] == '0':
-                    continue
+                    continue # "normal" overrides
                 elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_ZONE:
                     if self.overrides[o]['target_id'] == zone_id:
-                        current_status = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+                        current_mode = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
                         break
                 elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_GLOBAL:
-                    current_status = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+                    current_mode = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
 
-        if not current_status:
-            current_profile_id = self.zones[zone_id]['week_profile_id']
+        # no override - figure out from week profile
+        if not current_mode:
             current_weekday = now.tm_wday
-            current_time = (now.tm_hour*100) + now.tm_min
-            current_status = self.get_week_profile_status(self.week_profiles[current_profile_id]['profile'], current_weekday, current_time)
-                
-        self.logger.debug('Current status for zone {} is {}'.format(self.zones[zone_id]['name'], current_status))
+            current_profile = self.week_profiles[self.zones[zone_id]['week_profile_id']]['profile']
+            current_status = self.get_week_profile_status(current_profile, current_weekday, current_time)
+            current_mode = self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[current_status]
+
+        self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
         return current_status
