@@ -10,6 +10,7 @@
 import time
 import warnings
 import logging
+import collections
 import socket
 import threading
 
@@ -145,11 +146,11 @@ class nobo:
     def __init__(self, serial, ip=None, discover=True):
         self.logger = logging.getLogger(__name__)
         self.hub_info = {}
-        self.zones = {}
-        self.components = {}
-        self.week_profiles = {}
-        self.overrides = {}
-        self.temperatures = {}
+        self.zones = collections.OrderedDict()
+        self.components = collections.OrderedDict()
+        self.week_profiles = collections.OrderedDict()
+        self.overrides = collections.OrderedDict()
+        self.temperatures = collections.OrderedDict()
 
         # Get a socket connection, either by scanning or directly
         if discover:
@@ -399,50 +400,50 @@ class nobo:
 
         # The added/updated info messages
         elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_ADD_ZONE ,self.API.RESPONSE_UPDATE_ZONE]:
-            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:-1]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:-1]))
             self.zones[dicti['zone_id']] = dicti
             self.logger.info('added/updated zone: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_ADD_COMPONENT ,self.API.RESPONSE_UPDATE_COMPONENT]:
-            dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
             self.components[dicti['serial']] = dicti
             self.logger.info('added/updated component: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_ADD_WEEK_PROFILE, self.API.RESPONSE_UPDATE_WEEK_PROFILE]:
-            dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
             dicti['profile'] = r[-1].split(',')
             self.week_profiles[dicti['week_profile_id']] = dicti
             self.logger.info('added/updated week profile: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_OVERRIDE]:
-            dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             self.overrides[dicti['override_id']] = dicti
             self.logger.info('added/updated override: id %s', dicti['override_id'])
 
         elif r[0] in [self.API.RESPONSE_HUB_INFO, self.API.RESPONSE_UPDATE_HUB_INFO]:
-            self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
+            self.hub_info = collections.OrderedDict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
             self.logger.info('updated hub info: %s', self.hub_info)
             if r[0] == self.API.RESPONSE_HUB_INFO:
                 self.socket_received_all_info.set()
 
         # The removed info messages
         elif r[0] == self.API.RESPONSE_REMOVE_ZONE:
-            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:-1]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:-1]))
             popped_zone = self.zones.pop(dicti['zone_id'], None)
             self.logger.info('removed zone: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_COMPONENT:
-            dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
             popped_component = self.components.pop(dicti['serial'], None)
             self.logger.info('removed component: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_WEEK_PROFILE:
-            dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
             popped_profile = self.week_profiles.pop(dicti['week_profile_id'], None)
             self.logger.info('removed week profile: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_OVERRIDE:
-            dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             popped_override = self.overrides.pop(dicti['override_id'], None)
             self.logger.info('removed override: id%s', dicti['override_id'])
 
