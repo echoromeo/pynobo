@@ -126,7 +126,7 @@ class nobo:
         WEEK_PROFILE_STATE_OFF = '4'
 
         STRUCT_KEYS_HUB = ['serial', 'name', 'default_away_override_length', 'override_id', 'software_version', 'hardware_version', 'production_date']
-        STRUCT_KEYS_ZONE = ['zone_id', 'name', 'week_profile_id', 'temp_comfort_c', 'temp_eco_c', 'override_allowed', 'override_id']
+        STRUCT_KEYS_ZONE = ['zone_id', 'name', 'week_profile_id', 'temp_comfort_c', 'temp_eco_c', 'override_allowed']
         STRUCT_KEYS_COMPONENT = ['serial', 'status', 'name', 'reverse_onoff', 'zone_id', 'override_id', 'tempsensor_for_zone_id']
         STRUCT_KEYS_WEEK_PROFILE = ['week_profile_id', 'name', 'profile'] # profile is minimum 7 and probably more values separated by comma
         STRUCT_KEYS_OVERRIDE = ['override_id', 'mode', 'type', 'end_time', 'start_time', 'target_type', 'target_id']
@@ -399,7 +399,7 @@ class nobo:
 
         # The added/updated info messages
         elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_ADD_ZONE ,self.API.RESPONSE_UPDATE_ZONE]:
-            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
+            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:-1]))
             self.zones[dicti['zone_id']] = dicti
             self.logger.info('added/updated zone: %s', dicti['name'])
 
@@ -427,7 +427,7 @@ class nobo:
 
         # The removed info messages
         elif r[0] == self.API.RESPONSE_REMOVE_ZONE:
-            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
+            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:-1]))
             popped_zone = self.zones.pop(dicti['zone_id'], None)
             self.logger.info('removed zone: %s', dicti['name'])
 
@@ -471,7 +471,7 @@ class nobo:
     # Function to update name, week profile, temperature or override allowing for a zone
     def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
         command = [self.API.UPDATE_ZONE, zone_id, self.zones[zone_id]['name'], self.zones[zone_id]['week_profile_id'],
-            self.zones[zone_id]['temp_comfort_c'], self.zones[zone_id]['temp_eco_c'], self.zones[zone_id]['override_allowed'], '-1']
+            self.zones[zone_id]['temp_comfort_c'], self.zones[zone_id]['temp_eco_c'], self.zones[zone_id]['override_allowed'], self.API.OVERRIDE_ID_NONE]
         if name:
             command[2] = name
         if week_profile_id:
