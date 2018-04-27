@@ -507,7 +507,7 @@ class nobo:
 	# Function to find mode in a zone right now
     def get_current_zone_mode(self, zone_id, now=time.localtime()):
         current_time = (now.tm_hour*100) + now.tm_min
-        current_mode = 'unknown'
+        current_mode = ''
         
         if self.zones[zone_id]['override_allowed'] == '1':
             for o in self.overrides:
@@ -528,4 +528,4 @@ class nobo:
             current_mode = self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[current_status]
 
         self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
-        return current_status
+        return current_mode
