@@ -329,6 +329,12 @@ class nobo:
     # Function to send a list with command string(s)
     def send_command(self, command_array):
         self.logger.debug('sending: %s', command_array)
+
+        # Convert integers to string
+        for idx, c in enumerate(command_array):
+            if isinstance(c, int):
+                command_array[idx] = str(c)
+
         message = ' '.join(command_array).encode('utf-8')
         try:
             self.client.send(message + b'\r')
