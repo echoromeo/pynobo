@@ -8,6 +8,7 @@
 # Example: glen = nobo('123') or glen = nobo('123123123123', '10.0.0.128', False)
 
 import time
+import datetime
 import warnings
 import logging
 import collections
@@ -495,24 +496,25 @@ class nobo:
         self.send_command(command)
 
     # Function to find the status of a profile at a certain time in the week. Monday is day 0
-    def get_week_profile_status(self, profile, day, time):
+    def get_week_profile_status(self, profile, dt):
+        target = (dt.hour*100) + dt.minute
         # profile[0] is always 0000x, so this provides the initial status
         status = profile[0][-1]
         weekday = 0
         for timestamp in profile[1:]:
             if timestamp[:4] == '0000':
                 weekday += 1
-            if weekday == day:
-                if int(timestamp[:4]) <= time:
+            if weekday == dt.weekday():
+                if int(timestamp[:4]) <= target:
                     status = timestamp[-1]
                 else:
                     break
-        self.logger.debug('Status at {} on weekday {} is {}'.format(day, time, status))
+        self.logger.debug('Status at {} on weekday {} is {}'.format(dt.weekday(), target, status))
         return status
 
 	# Function to find mode in a zone right now
-    def get_current_zone_mode(self, zone_id, now=time.localtime()):
-        current_time = (now.tm_hour*100) + now.tm_min
+    def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
+        current_time = (now.hour*100) + now.minute
         current_mode = ''
         
         if self.zones[zone_id]['override_allowed'] == '1':
@@ -528,9 +530,8 @@ class nobo:
 
         # no override - figure out from week profile
         if not current_mode:
-            current_weekday = now.tm_wday
             current_profile = self.week_profiles[self.zones[zone_id]['week_profile_id']]['profile']
-            current_status = self.get_week_profile_status(current_profile, current_weekday, current_time)
+            current_status = self.get_week_profile_status(current_profile, now)
             current_mode = self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[current_status]
 
         self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
