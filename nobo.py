@@ -496,7 +496,8 @@ class nobo:
         self.send_command(command)
 
     # Function to find the status of a profile at a certain time in the week. Monday is day 0
-    def get_week_profile_status(self, profile, dt):
+    def get_week_profile_status(self, week_profile_id, dt=datetime.datetime.today()):
+        profile = self.week_profiles[week_profile_id]['profile']
         target = (dt.hour*100) + dt.minute
         # profile[0] is always 0000x, so this provides the initial status
         status = profile[0][-1]
@@ -528,10 +529,9 @@ class nobo:
                 elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_GLOBAL:
                     current_mode = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
 
-        # no override - figure out from week profile
+        # no override - find mode from week profile
         if not current_mode:
-            current_profile = self.week_profiles[self.zones[zone_id]['week_profile_id']]['profile']
-            current_mode = self.get_week_profile_status(current_profile, now)
+            current_mode = self.get_week_profile_status(self.zones[zone_id]['week_profile_id'], now)
 
         self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
         return current_mode
