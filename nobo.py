@@ -128,7 +128,7 @@ class nobo:
         WEEK_PROFILE_STATE_OFF = '4'
 
         STRUCT_KEYS_HUB = ['serial', 'name', 'default_away_override_length', 'override_id', 'software_version', 'hardware_version', 'production_date']
-        STRUCT_KEYS_ZONE = ['zone_id', 'name', 'week_profile_id', 'temp_comfort_c', 'temp_eco_c', 'override_allowed']
+        STRUCT_KEYS_ZONE = ['zone_id', 'name', 'week_profile_id', 'temp_comfort_c', 'temp_eco_c', 'override_allowed', 'deprecated_override_id']
         STRUCT_KEYS_COMPONENT = ['serial', 'status', 'name', 'reverse_onoff', 'zone_id', 'override_id', 'tempsensor_for_zone_id']
         STRUCT_KEYS_WEEK_PROFILE = ['week_profile_id', 'name', 'profile'] # profile is minimum 7 and probably more values separated by comma
         STRUCT_KEYS_OVERRIDE = ['override_id', 'mode', 'type', 'end_time', 'start_time', 'target_type', 'target_id']
@@ -407,7 +407,7 @@ class nobo:
 
         # The added/updated info messages
         elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_ADD_ZONE ,self.API.RESPONSE_UPDATE_ZONE]:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:-1]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
             self.zones[dicti['zone_id']] = dicti
             self.logger.info('added/updated zone: %s', dicti['name'])
 
@@ -435,7 +435,7 @@ class nobo:
 
         # The removed info messages
         elif r[0] == self.API.RESPONSE_REMOVE_ZONE:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:-1]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
             popped_zone = self.zones.pop(dicti['zone_id'], None)
             self.logger.info('removed zone: %s', dicti['name'])
 
@@ -479,7 +479,7 @@ class nobo:
     # Function to update name, week profile, temperature or override allowing for a zone
     def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
         # Initialize command with the current zone settings
-        command = [self.API.UPDATE_ZONE] + list(self.zones[zone_id].values()) + [self.API.OVERRIDE_ID_NONE]
+        command = [self.API.UPDATE_ZONE] + list(self.zones[zone_id].values())
         
         # Replace command with arguments that are not None. Is there a more elegant way?
         if name:
@@ -509,10 +509,10 @@ class nobo:
                     status = timestamp[-1]
                 else:
                     break
-        self.logger.debug('Status at {} on weekday {} is {}'.format(dt.weekday(), target, status))
-        return status
+        self.logger.debug('Status at {} on weekday {} is {}'.format(target, dt.weekday(), self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]))
+        return self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
 
-	# Function to find mode in a zone right now
+    # Function to find mode in a zone right now
     def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
         current_time = (now.hour*100) + now.minute
         current_mode = ''
@@ -531,8 +531,7 @@ class nobo:
         # no override - figure out from week profile
         if not current_mode:
             current_profile = self.week_profiles[self.zones[zone_id]['week_profile_id']]['profile']
-            current_status = self.get_week_profile_status(current_profile, now)
-            current_mode = self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[current_status]
+            current_mode = self.get_week_profile_status(current_profile, now)
 
         self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
         return current_mode
