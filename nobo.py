@@ -8,9 +8,10 @@
 # Example: glen = nobo('123') or glen = nobo('123123123123', '10.0.0.128', False)
 
 import time
-import arrow
+import datetime
 import warnings
 import logging
+import collections
 import socket
 import threading
 
@@ -104,7 +105,7 @@ class nobo:
 
         RESPONSE_ERROR = 'E00'              # Other error messages than E00 may also be sent from the Hub (E01, E02 etc.): E00 <command> <message>
 
-        OVERRIDE_MODE_OFF = '0'
+        OVERRIDE_MODE_NORMAL = '0'
         OVERRIDE_MODE_COMFORT = '1'
         OVERRIDE_MODE_ECO = '2'
         OVERRIDE_MODE_AWAY = '3'
@@ -121,20 +122,36 @@ class nobo:
         OVERRIDE_ID_NONE = '-1'
         OVERRIDE_ID_HUB = '-1'
 
+        WEEK_PROFILE_STATE_ECO = '0'
+        WEEK_PROFILE_STATE_COMFORT = '1'
+        WEEK_PROFILE_STATE_AWAY = '2'
+        WEEK_PROFILE_STATE_OFF = '4'
+
         STRUCT_KEYS_HUB = ['serial', 'name', 'default_away_override_length', 'override_id', 'software_version', 'hardware_version', 'production_date']
-        STRUCT_KEYS_ZONE = ['zone_id', 'name', 'week_profile_id', 'temp_comfort_c', 'temp_eco_c', 'override_allowed', 'override_id']
+        STRUCT_KEYS_ZONE = ['zone_id', 'name', 'week_profile_id', 'temp_comfort_c', 'temp_eco_c', 'override_allowed', 'deprecated_override_id']
         STRUCT_KEYS_COMPONENT = ['serial', 'status', 'name', 'reverse_onoff', 'zone_id', 'override_id', 'tempsensor_for_zone_id']
         STRUCT_KEYS_WEEK_PROFILE = ['week_profile_id', 'name', 'profile'] # profile is minimum 7 and probably more values separated by comma
         STRUCT_KEYS_OVERRIDE = ['override_id', 'mode', 'type', 'end_time', 'start_time', 'target_type', 'target_id']
 
+        NAME_OFF = 'off'
+        NAME_AWAY = 'away'
+        NAME_ECO = 'eco'
+        NAME_COMFORT = 'comfort'
+        NAME_NORMAL = 'normal'
+
+        DICT_OVERRIDE_MODE_TO_NAME = {OVERRIDE_MODE_NORMAL : NAME_NORMAL, OVERRIDE_MODE_COMFORT : NAME_COMFORT, OVERRIDE_MODE_ECO : NAME_ECO, OVERRIDE_MODE_AWAY : NAME_AWAY}
+        DICT_WEEK_PROFILE_STATUS_TO_NAME = {WEEK_PROFILE_STATE_ECO : NAME_ECO, WEEK_PROFILE_STATE_COMFORT : NAME_COMFORT, WEEK_PROFILE_STATE_AWAY : NAME_AWAY, WEEK_PROFILE_STATE_OFF : NAME_OFF}
+        DICT_NAME_TO_OVERRIDE_MODE = {NAME_NORMAL : OVERRIDE_MODE_NORMAL, NAME_COMFORT : OVERRIDE_MODE_COMFORT, NAME_ECO : OVERRIDE_MODE_ECO, NAME_AWAY : OVERRIDE_MODE_AWAY}
+        DICT_NAME_TO_WEEK_PROFILE_STATUS = {NAME_ECO : WEEK_PROFILE_STATE_ECO, NAME_COMFORT : WEEK_PROFILE_STATE_COMFORT, NAME_AWAY : WEEK_PROFILE_STATE_AWAY, NAME_OFF : WEEK_PROFILE_STATE_OFF}
+
     def __init__(self, serial, ip=None, discover=True):
         self.logger = logging.getLogger(__name__)
         self.hub_info = {}
-        self.zones = {}
-        self.components = {}
-        self.week_profiles = {}
-        self.overrides = {}
-        self.temperatures = {}
+        self.zones = collections.OrderedDict()
+        self.components = collections.OrderedDict()
+        self.week_profiles = collections.OrderedDict()
+        self.overrides = collections.OrderedDict()
+        self.temperatures = collections.OrderedDict()
 
         # Get a socket connection, either by scanning or directly
         if discover:
@@ -198,7 +215,7 @@ class nobo:
         self.client.connect((ip, 27779))
 
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
-        self.send_command([self.API.START, self.API.VERSION, serial, arrow.now().format('YYYYMMDDHHmmss')])
+        self.send_command([self.API.START, self.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
 
         # receive the response data (4096 is recommended buffer size)
         response = self.get_response()
@@ -313,6 +330,12 @@ class nobo:
     # Function to send a list with command string(s)
     def send_command(self, command_array):
         self.logger.debug('sending: %s', command_array)
+
+        # Convert integers to string
+        for idx, c in enumerate(command_array):
+            if isinstance(c, int):
+                command_array[idx] = str(c)
+
         message = ' '.join(command_array).encode('utf-8')
         try:
             self.client.send(message + b'\r')
@@ -349,11 +372,6 @@ class nobo:
 
         return response
 
-    # Function to override hub/zones/components. "Override" to mode 0 to disable an existing override?
-    def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
-        command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
-        self.send_command(command)
-
     # Task running in daemon thread
     def socket_receive(self):
         while not self.socket_receive_exit_flag.is_set():
@@ -389,50 +407,50 @@ class nobo:
 
         # The added/updated info messages
         elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_ADD_ZONE ,self.API.RESPONSE_UPDATE_ZONE]:
-            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
             self.zones[dicti['zone_id']] = dicti
             self.logger.info('added/updated zone: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_ADD_COMPONENT ,self.API.RESPONSE_UPDATE_COMPONENT]:
-            dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
             self.components[dicti['serial']] = dicti
             self.logger.info('added/updated component: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_ADD_WEEK_PROFILE, self.API.RESPONSE_UPDATE_WEEK_PROFILE]:
-            dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
             dicti['profile'] = r[-1].split(',')
             self.week_profiles[dicti['week_profile_id']] = dicti
             self.logger.info('added/updated week profile: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_OVERRIDE]:
-            dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             self.overrides[dicti['override_id']] = dicti
             self.logger.info('added/updated override: id %s', dicti['override_id'])
 
         elif r[0] in [self.API.RESPONSE_HUB_INFO, self.API.RESPONSE_UPDATE_HUB_INFO]:
-            self.hub_info = dict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
+            self.hub_info = collections.OrderedDict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
             self.logger.info('updated hub info: %s', self.hub_info)
             if r[0] == self.API.RESPONSE_HUB_INFO:
                 self.socket_received_all_info.set()
 
         # The removed info messages
         elif r[0] == self.API.RESPONSE_REMOVE_ZONE:
-            dicti = dict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
             popped_zone = self.zones.pop(dicti['zone_id'], None)
             self.logger.info('removed zone: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_COMPONENT:
-            dicti = dict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
             popped_component = self.components.pop(dicti['serial'], None)
             self.logger.info('removed component: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_WEEK_PROFILE:
-            dicti = dict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
             popped_profile = self.week_profiles.pop(dicti['week_profile_id'], None)
             self.logger.info('removed week profile: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_OVERRIDE:
-            dicti = dict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
+            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             popped_override = self.overrides.pop(dicti['override_id'], None)
             self.logger.info('removed override: id%s', dicti['override_id'])
 
@@ -452,3 +470,68 @@ class nobo:
         else:
             self.logger.warning('behavior undefined for this response: {}'.format(r))
             warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?
+
+    # Function to override hub/zones/components. "Override" to mode 0 to disable an existing override
+    def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
+        command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
+        self.send_command(command)
+    
+    # Function to update name, week profile, temperature or override allowing for a zone
+    def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
+        # Initialize command with the current zone settings
+        command = [self.API.UPDATE_ZONE] + list(self.zones[zone_id].values())
+        
+        # Replace command with arguments that are not None. Is there a more elegant way?
+        if name:
+            command[2] = name
+        if week_profile_id:
+            command[3] = week_profile_id
+        if temp_comfort_c:
+            command[4] = temp_comfort_c
+        if temp_eco_c:
+            command[5] = temp_eco_c
+        if override_allowed:
+            command[6] = override_allowed
+
+        self.send_command(command)
+
+    # Function to find the status of a profile at a certain time in the week. Monday is day 0
+    def get_week_profile_status(self, week_profile_id, dt=datetime.datetime.today()):
+        profile = self.week_profiles[week_profile_id]['profile']
+        target = (dt.hour*100) + dt.minute
+        # profile[0] is always 0000x, so this provides the initial status
+        status = profile[0][-1]
+        weekday = 0
+        for timestamp in profile[1:]:
+            if timestamp[:4] == '0000':
+                weekday += 1
+            if weekday == dt.weekday():
+                if int(timestamp[:4]) <= target:
+                    status = timestamp[-1]
+                else:
+                    break
+        self.logger.debug('Status at {} on weekday {} is {}'.format(target, dt.weekday(), self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]))
+        return self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
+
+    # Function to find mode in a zone right now
+    def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
+        current_time = (now.hour*100) + now.minute
+        current_mode = ''
+        
+        if self.zones[zone_id]['override_allowed'] == '1':
+            for o in self.overrides:
+                if self.overrides[o]['mode'] == '0':
+                    continue # "normal" overrides
+                elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_ZONE:
+                    if self.overrides[o]['target_id'] == zone_id:
+                        current_mode = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+                        break
+                elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_GLOBAL:
+                    current_mode = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+
+        # no override - find mode from week profile
+        if not current_mode:
+            current_mode = self.get_week_profile_status(self.zones[zone_id]['week_profile_id'], now)
+
+        self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
+        return current_mode
