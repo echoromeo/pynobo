@@ -375,23 +375,29 @@ class nobo:
     # Task running in daemon thread
     def socket_receive(self):
         while not self.socket_receive_exit_flag.is_set():
-            if self.socket_connected.is_set():
-                resp = self.get_response(True)
-                for r in resp:
-                    self.logger.debug('received: %s', r)
+            try:
+                if self.socket_connected.is_set():
+                    resp = self.get_response(True)
+                    for r in resp:
+                        self.logger.debug('received: %s', r)
 
-                    if r[0] == self.API.HANDSHAKE:
-                        pass # Handshake, no action needed
+                        if r[0] == self.API.HANDSHAKE:
+                            pass # Handshake, no action needed
 
-                    elif r[0][0] == 'E':
-                        self.logger.error('error! what did you do? %s', r)
-                        #TODO: Raise something here?
+                        elif r[0][0] == 'E':
+                            self.logger.error('error! what did you do? %s', r)
+                            #TODO: Raise something here?
 
-                    else:
-                        self.response_handler(r)
+                        else:
+                            self.response_handler(r)
 
-            else:
-                self.reconnect_hub()
+                else:
+                    self.reconnect_hub()
+            except Exception as e:
+                # Ops, now we have real problems
+                self.logger.error("Unhandeled exception: %s", e, exc_info=1)
+                # Just disconnect (in stead of risking an infinite reconnect loop)
+                self.socket_receive_exit_flag.set()
 
         self.logger.info('receive thread exited')
 
