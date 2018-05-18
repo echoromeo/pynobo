@@ -339,7 +339,7 @@ class nobo:
         message = ' '.join(command_array).encode('utf-8')
         try:
             self.client.send(message + b'\r')
-        except ConnectionResetError:
+        except ConnectionError:
             self.logger.info('lost connection to hub')
             self.socket_connected.clear()
 
@@ -358,7 +358,7 @@ class nobo:
                         self.last_handshake = now
                 else:
                     break
-            except ConnectionResetError:
+            except ConnectionError:
                 self.logger.info('lost connection to hub')
                 self.socket_connected.clear()
                 break
@@ -475,12 +475,12 @@ class nobo:
     def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         self.send_command(command)
-    
+
     # Function to update name, week profile, temperature or override allowing for a zone
     def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
         # Initialize command with the current zone settings
         command = [self.API.UPDATE_ZONE] + list(self.zones[zone_id].values())
-        
+
         # Replace command with arguments that are not None. Is there a more elegant way?
         if name:
             command[2] = name
@@ -517,7 +517,7 @@ class nobo:
     def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
         current_time = (now.hour*100) + now.minute
         current_mode = ''
-        
+
         if self.zones[zone_id]['override_allowed'] == '1':
             for o in self.overrides:
                 if self.overrides[o]['mode'] == '0':
