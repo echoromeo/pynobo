@@ -186,7 +186,8 @@ class nobo:
             raise Exception("Failed to connect to Ecohub")
 
         # start thread for continously receiving new data from hub
-        self.socket_receive_thread = threading.Thread(target=self.socket_receive, daemon=True)
+        self.socket_receive_thread = threading.Thread(target=self.socket_receive)
+        self.socket_receive_thread.daemon = True
         self.socket_receive_exit_flag = threading.Event()
         self.socket_received_all_info = threading.Event()
         self.socket_connected = threading.Event()
@@ -298,7 +299,7 @@ class nobo:
 
         ds = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         ds.settimeout(0.1)
-        ds.bind((' ',10000))
+        ds.bind(('',10000))
 
         start_time = time.time()
         while (start_time + autodiscover_wait > time.time()):
