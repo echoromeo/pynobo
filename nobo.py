@@ -340,8 +340,8 @@ class nobo:
         message = ' '.join(command_array).encode('utf-8')
         try:
             self.client.send(message + b'\r')
-        except ConnectionError:
-            self.logger.info('lost connection to hub')
+        except ConnectionError as e:
+            self.logger.info('lost connection to hub (%s)', e)
             self.socket_connected.clear()
 
     # Function to receive a string from the hub and reformat string list
@@ -359,8 +359,8 @@ class nobo:
                         self.last_handshake = now
                 else:
                     break
-            except ConnectionError:
-                self.logger.info('lost connection to hub')
+            except ConnectionError as e:
+                self.logger.info('lost connection to hub (%s)', e)
                 self.socket_connected.clear()
                 break
 
