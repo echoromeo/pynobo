@@ -15,6 +15,7 @@ import collections
 import socket
 import threading
 
+
 class nobo:
 
     # All the commands and responses from API v1.1 - Some with sensible names, others not yet given better names
@@ -327,7 +328,7 @@ class nobo:
 
         ds = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         ds.settimeout(0.1)
-        ds.bind(('',10000))
+        ds.bind(('', 10000))
 
         start_time = time.time()
         while (start_time + autodiscover_wait > time.time()):
@@ -351,7 +352,7 @@ class nobo:
                         # This is not the Ecohub you are looking for
                         discover_ip = None
                     if discover_ip and discover_serial:
-                        discovered_hubs.add( (discover_ip, discover_serial) )
+                        discovered_hubs.add((discover_ip, discover_serial))
 
         ds.close()
         return discovered_hubs
@@ -554,7 +555,7 @@ class nobo:
         if self.zones[zone_id]['override_allowed'] == '1':
             for o in self.overrides:
                 if self.overrides[o]['mode'] == '0':
-                    continue # "normal" overrides
+                    continue  # "normal" overrides
                 elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_ZONE:
                     if self.overrides[o]['target_id'] == zone_id:
                         current_mode = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
