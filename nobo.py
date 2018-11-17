@@ -346,6 +346,8 @@ class nobo:
                         if discover_serial != serial[0:9]:
                             # This is not the Ecohub you are looking for
                             discover_serial = None
+                        else:
+                            discover_serial = serial
                     else:
                         discover_serial += serial
                     if ip and discover_ip != ip:
