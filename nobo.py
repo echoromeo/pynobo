@@ -144,7 +144,7 @@ class nobo:
         DICT_NAME_TO_OVERRIDE_MODE = {NAME_NORMAL : OVERRIDE_MODE_NORMAL, NAME_COMFORT : OVERRIDE_MODE_COMFORT, NAME_ECO : OVERRIDE_MODE_ECO, NAME_AWAY : OVERRIDE_MODE_AWAY}
         DICT_NAME_TO_WEEK_PROFILE_STATUS = {NAME_ECO : WEEK_PROFILE_STATE_ECO, NAME_COMFORT : WEEK_PROFILE_STATE_COMFORT, NAME_AWAY : WEEK_PROFILE_STATE_AWAY, NAME_OFF : WEEK_PROFILE_STATE_OFF}
 
-    def __init__(self, serial, ip=None, discover=True):
+    def __init__(self, serial, ip=None, discover=True, keep_trying=True):
         self.logger = logging.getLogger(__name__)
         self.hub_info = {}
         self.zones = collections.OrderedDict()
@@ -153,53 +153,100 @@ class nobo:
         self.overrides = collections.OrderedDict()
         self.temperatures = collections.OrderedDict()
 
-        # Get a socket connection, either by scanning or directly
+        # Sanity check on input parameters
         if discover:
-            discovered_hubs = self.discover_hubs(serial=serial, ip=ip)
-            if not discovered_hubs:
-                self.logger.error("Failed to discover any Nobø Ecohubs")
-                raise Exception("Failed to discover any Nobø Ecohubs")
-            while discovered_hubs:
-                (discover_ip, discover_serial) = discovered_hubs.pop()
-                try:
-                    self.connect_hub(discover_ip, discover_serial)
-                    break  # We connect to the first valid hub, no reason to try the rest
-                except Exception as e:
-                    # This might not have been the Ecohub we wanted (wrong serial)
-                    self.logger.warning("Could not connect to {}:{} - {}".format(
-                                        discover_ip, discover_serial, e))
+            # We need a serial number, IP is optional
+            if len(serial) != 12 and len(serial) != 3:
+                self.logger.error('Could not connect, no valid serial number provided')
+                raise ValueError('Could not connect, no valid serial number provided')
         else:
-            # check if we have an IP
+            # Check that we have an IP
             if not ip:
                 self.logger.error('Could not connect, no ip address provided')
                 raise ValueError('Could not connect, no ip address provided')
 
-            # check if we have a valid serial before we start connection
+            # Check that we have a valid serial before we start connection
             if len(serial) != 12:
                 self.logger.error('Could not connect, no valid serial number provided')
                 raise ValueError('Could not connect, no valid serial number provided')
 
-            self.connect_hub(ip, serial)
-
-        if not self.client:
-            self.logger.error("Failed to connect to Ecohub")
-            raise Exception("Failed to connect to Ecohub")
+        self.hub_ip = ip                # Target IP or None (if using discover)
+        self.hub_serial = serial        # Full 12 digit, last 3 digit only if using discover
+        self.discover = discover        # Search for hub, or only use provided hub_ip/hub_serial
+        self.keep_trying = keep_trying  # Set to True to never exit, but keep trying to reconnect
+        self.client = None              # Socket for hub connection (or None for no connection, yet)
+        self.reconnect_delay = 0        # Delay before next connect: initial connect immediately
 
         # start thread for continously receiving new data from hub
-        self.socket_receive_thread = threading.Thread(target=self.socket_receive)
+        self.socket_receive_thread = threading.Thread(target=self.run_hub_connection)
         self.socket_receive_thread.daemon = True
         self.socket_receive_exit_flag = threading.Event()
         self.socket_received_all_info = threading.Event()
         self.socket_connected = threading.Event()
-        self.socket_connected.set()
         self.socket_receive_thread.start()
 
-        # Fetch all info
-        self.send_command([self.API.GET_ALL_INFO])
-        self.socket_received_all_info.wait()
+        self.logger.info('Launched Nobø connection thread')
 
-        self.logger.info('connected to Nobø Hub')
+    def run_hub_connection(self):
+        """Main loop for nobø eco hub connection (running in the deamon thread)"""
+        while not self.socket_receive_exit_flag.is_set():
+            try:
+                if self.socket_connected.is_set():
+                    self.socket_receive()
+                else:
+                    self.discover_and_connect()
+            except Exception as e:
+                # Ops, now we have real problems
+                self.logger.error("Unhandeled exception: %s", e, exc_info=1)
+                # Just disconnect (in stead of risking an infinite reconnect loop)
+                self.socket_receive_exit_flag.set()
 
+        self.logger.info('Nobø connection thread exited')
+
+    def discover_and_connect(self):
+        """Do discovery, if enabled, and connect
+
+        This method performs autodiscovery, and attempts to connect to the Nobø hub. If discovery
+        is disabled, it will  just attempt to connect. The self.reconnect_delay will be applied
+        before each connection attempt, and reset to 10 seconds on success. For each failure the
+        delay between connection attempts will be increased 10 seconds
+        """
+        time.sleep(self.reconnect_delay)
+
+        if self.discover:
+            discovered_hubs = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip)
+            if not discovered_hubs:
+                if self.keep_trying:
+                    self.logger.info("Failed to discover any Nobø Ecohubs")
+                else:
+                    raise Exception("Failed to discover any Nobø Ecohubs")
+            while discovered_hubs:
+                (discover_ip, discover_serial) = discovered_hubs.pop()
+                try:
+                    self.connect_hub(discover_ip, discover_serial)
+                    break  # We connect to the first valid hub, no reason to try more
+                except Exception as e:
+                    # This might not have been the Ecohub we wanted (wrong serial)
+                    self.logger.warning("Could not connect to {}:{} - {}".format(
+                                        discover_ip, discover_serial, e))
+                    if not discovered_hubs and not self.keep_trying:
+                        # If this was the last hub in the list, and we give up on failure -> give up
+                        raise Exception("Failed to connect to EcoHub", e)
+        else:
+            try:
+                self.connect_hub(self.hub_ip, self.hub_serial)
+            except Exception as e:
+                if self.keep_trying:
+                    self.logger.info("Failed to connect to Ecohub")
+                else:
+                    raise Exception("Failed to connect to Ecohub", e)
+        if self.client:
+            self.socket_connected.set()
+            self.reconnect_delay = 10
+            self.logger.info('connected to Nobø Hub')
+            self.send_command([self.API.GET_ALL_INFO])
+        else:
+            self.reconnect_delay += 10
 
     def connect_hub(self, ip, serial):
         """Attempt initial connection and handshake
@@ -257,25 +304,6 @@ class nobo:
             self.client.close()
             self.client = None
             raise Exception('connection to hub rejected: {}'.format(response[0]))
-
-    def reconnect_hub(self):
-        # close socket properly so connect_hub can restart properly
-        if self.client:
-            self.client.close()
-            self.client = None
-
-        # attempt reconnect to the lost hub
-        rediscovered_hub = None
-        while not rediscovered_hub:
-            self.logger.debug('hub not rediscovered')
-            rediscovered_hub = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip)
-            time.sleep(10)
-        self.connect_hub(self.hub_ip, self.hub_serial)
-        self.socket_connected.set()
-        self.logger.info('reconnected to Nobø Hub')
-
-        # Update all info
-        self.send_command([self.API.GET_ALL_INFO])
 
     def discover_hubs(self, serial, ip=None, autodiscover_wait=3.0):
         """Attempts to autodiscover Nobø Ecohubs on the local networkself.
@@ -361,7 +389,7 @@ class nobo:
                     break
             except ConnectionError as e:
                 self.logger.info('lost connection to hub (%s)', e)
-                self.socket_connected.clear()
+                self.disconnect()
                 break
 
         # Handle more than one response in one receive
@@ -373,34 +401,32 @@ class nobo:
 
         return response
 
-    # Task running in daemon thread
-    def socket_receive(self):
-        while not self.socket_receive_exit_flag.is_set():
+    def disconnect(self):
+        """Tear down the Nobø hub connection"""
+        self.socket_connected.clear()
+
+        if self.client:
             try:
-                if self.socket_connected.is_set():
-                    resp = self.get_response(True)
-                    for r in resp:
-                        self.logger.debug('received: %s', r)
+                self.client.close()
+            except OSError as e:
+                self.logger.info("Error closing socket", e)
+            self.client = None
 
-                        if r[0] == self.API.HANDSHAKE:
-                            pass # Handshake, no action needed
+    def socket_receive(self):
+        resp = self.get_response(True)
+        for r in resp:
+            self.logger.debug('received: %s', r)
 
-                        elif r[0][0] == 'E':
-                            self.logger.error('error! what did you do? %s', r)
-                            #TODO: Raise something here?
-
-                        else:
-                            self.response_handler(r)
-
+            if r[0] == self.API.HANDSHAKE:
+                pass  # Handshake, no action needed
+            elif r[0][0] == 'E':
+                self.logger.error('error! what did you do? %s', r)
+                if self.keep_trying:
+                    self.disconnect()
                 else:
-                    self.reconnect_hub()
-            except Exception as e:
-                # Ops, now we have real problems
-                self.logger.error("Unhandeled exception: %s", e, exc_info=1)
-                # Just disconnect (in stead of risking an infinite reconnect loop)
-                self.socket_receive_exit_flag.set()
-
-        self.logger.info('receive thread exited')
+                    raise Exception("Panic! Error from hub: {}".format(r))
+            else:
+                self.response_handler(r)
 
     def response_handler(self, r):
         # All info incoming, clear existing info
