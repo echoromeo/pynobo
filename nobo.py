@@ -196,6 +196,12 @@ class nobo:
                     self.socket_receive()
                 else:
                     self.discover_and_connect()
+            except OSError as e:
+                # Most likely some connection error that we have not handelled
+                if self.keep_trying:
+                    self.logger.error("Nobø Hub connection error: %s", e)
+                else:
+                    raise
             except Exception as e:
                 # Ops, now we have real problems
                 self.logger.error("Unhandeled exception: %s", e, exc_info=1)
