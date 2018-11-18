@@ -200,6 +200,7 @@ class nobo:
                 # Most likely some connection error that we have not handelled
                 if self.keep_trying:
                     self.logger.error("Nobø Hub connection error: %s", e)
+                    self.disconnect()
                 else:
                     raise
             except Exception as e:
