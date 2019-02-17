@@ -542,3 +542,24 @@ class nobo:
 
         self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
         return current_mode
+
+    # Function to get temperature from a component
+    def get_current_component_temperature(self, serial):
+        current_temperature = 'N/A'
+
+        if serial in self.temperatures:
+            current_temperature = self.temperatures[serial]
+
+        self.logger.debug('Current temperature for component {} is {}'.format(self.components[serial]['name'], current_temperature))
+        return current_temperature
+
+    # Function to get temperature in a zone
+    def get_current_zone_temperature(self, zone_id):
+        current_temperature = 'N/A'
+
+        for c in self.components:
+            if self.components[c]['zone_id'] == zone_id:
+                current_temperature = self.get_current_component_temperature(c)
+
+        self.logger.debug('Current temperature for zone {} is {}'.format(self.zones[zone_id]['name'], current_temperature))
+        return current_temperature
