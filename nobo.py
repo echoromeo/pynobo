@@ -420,6 +420,8 @@ class nobo:
 
         elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_ADD_COMPONENT ,self.API.RESPONSE_UPDATE_COMPONENT]:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
+            if dicti['zone_id'] == '-1' and dicti['tempsensor_for_zone_id'] != '-1':
+                dicti['zone_id'] = dicti['tempsensor_for_zone_id']
             self.components[dicti['serial']] = dicti
             self.logger.info('added/updated component: %s', dicti['name'])
 
@@ -482,6 +484,10 @@ class nobo:
     def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         self.send_command(command)
+        for o in self.overrides:
+            if self.overrides[o]['target_id'] == target_id:
+                self.overrides[o]['mode'] = mode
+                self.overrides[o]['type'] = type
 
     # Function to update name, week profile, temperature or override allowing for a zone
     def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
@@ -495,8 +501,10 @@ class nobo:
             command[3] = week_profile_id
         if temp_comfort_c:
             command[4] = temp_comfort_c
+            self.zones[zone_id]['temp_comfort_c'] = temp_comfort_c
         if temp_eco_c:
             command[5] = temp_eco_c
+            self.zones[zone_id]['temp_eco_c'] = temp_eco_c
         if override_allowed:
             command[6] = override_allowed
 
@@ -542,3 +550,26 @@ class nobo:
 
         self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
         return current_mode
+        
+    # Function to get temperature from a component
+    def get_current_component_temperature(self, serial):
+        current_temperature = 'N/A'
+
+        if serial in self.temperatures:
+            current_temperature = self.temperatures[serial]
+
+        self.logger.debug('Current temperature for component {} is {}'.format(self.components[serial]['name'], current_temperature))
+        return current_temperature
+
+    # Function to get (first) temperature in a zone
+    def get_current_zone_temperature(self, zone_id):
+        current_temperature = 'N/A'
+
+        for c in self.components:
+            if self.components[c]['zone_id'] == zone_id:
+                current_temperature = self.get_current_component_temperature(c)
+                if current_temperature != 'N/A':
+                    break
+
+        self.logger.debug('Current temperature for zone {} is {}'.format(self.zones[zone_id]['name'], current_temperature))
+        return current_temperature
