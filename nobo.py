@@ -504,7 +504,7 @@ class nobo:
             self.zones[zone_id]['temp_comfort_c'] = temp_comfort_c
         if temp_eco_c:
             command[5] = temp_eco_c
-            self.zones[zone_id]['temp_eco_c'] = temp_eco_c
+            self.zones[zone_id]['temp_eco_c'] = temp_eco_c # Save setting before sending command
         if override_allowed:
             command[6] = override_allowed
 
