@@ -501,7 +501,7 @@ class nobo:
             command[3] = week_profile_id
         if temp_comfort_c:
             command[4] = temp_comfort_c
-            self.zones[zone_id]['temp_comfort_c'] = temp_comfort_c
+            self.zones[zone_id]['temp_comfort_c'] = temp_comfort_c # Save setting before sending command
         if temp_eco_c:
             command[5] = temp_eco_c
             self.zones[zone_id]['temp_eco_c'] = temp_eco_c # Save setting before sending command
