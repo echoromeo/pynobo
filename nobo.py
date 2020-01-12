@@ -484,7 +484,7 @@ class nobo:
     def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         self.send_command(command)
-        for o in self.overrides:
+        for o in self.overrides: # Save override before command has finished executing
             if self.overrides[o]['target_id'] == target_id:
                 self.overrides[o]['mode'] = mode
                 self.overrides[o]['type'] = type
