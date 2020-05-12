@@ -186,7 +186,8 @@ class nobo:
             raise Exception("Failed to connect to Ecohub")
 
         # start thread for continously receiving new data from hub
-        self.socket_receive_thread = threading.Thread(target=self.socket_receive, daemon=True)
+        self.socket_receive_thread = threading.Thread(target=self.socket_receive)
+        self.socket_receive_thread.daemon = True
         self.socket_receive_exit_flag = threading.Event()
         self.socket_received_all_info = threading.Event()
         self.socket_connected = threading.Event()
@@ -298,7 +299,7 @@ class nobo:
 
         ds = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         ds.settimeout(0.1)
-        ds.bind((' ',10000))
+        ds.bind(('',10000))
 
         start_time = time.time()
         while (start_time + autodiscover_wait > time.time()):
@@ -339,8 +340,8 @@ class nobo:
         message = ' '.join(command_array).encode('utf-8')
         try:
             self.client.send(message + b'\r')
-        except ConnectionResetError:
-            self.logger.info('lost connection to hub')
+        except ConnectionError as e:
+            self.logger.info('lost connection to hub (%s)', e)
             self.socket_connected.clear()
 
     # Function to receive a string from the hub and reformat string list
@@ -358,8 +359,8 @@ class nobo:
                         self.last_handshake = now
                 else:
                     break
-            except ConnectionResetError:
-                self.logger.info('lost connection to hub')
+            except ConnectionError as e:
+                self.logger.info('lost connection to hub (%s)', e)
                 self.socket_connected.clear()
                 break
 
@@ -375,23 +376,29 @@ class nobo:
     # Task running in daemon thread
     def socket_receive(self):
         while not self.socket_receive_exit_flag.is_set():
-            if self.socket_connected.is_set():
-                resp = self.get_response(True)
-                for r in resp:
-                    self.logger.debug('received: %s', r)
+            try:
+                if self.socket_connected.is_set():
+                    resp = self.get_response(True)
+                    for r in resp:
+                        self.logger.debug('received: %s', r)
 
-                    if r[0] == self.API.HANDSHAKE:
-                        pass # Handshake, no action needed
+                        if r[0] == self.API.HANDSHAKE:
+                            pass # Handshake, no action needed
 
-                    elif r[0][0] == 'E':
-                        self.logger.error('error! what did you do? %s', r)
-                        #TODO: Raise something here?
+                        elif r[0][0] == 'E':
+                            self.logger.error('error! what did you do? %s', r)
+                            #TODO: Raise something here?
 
-                    else:
-                        self.response_handler(r)
+                        else:
+                            self.response_handler(r)
 
-            else:
-                self.reconnect_hub()
+                else:
+                    self.reconnect_hub()
+            except Exception as e:
+                # Ops, now we have real problems
+                self.logger.error("Unhandeled exception: %s", e, exc_info=1)
+                # Just disconnect (in stead of risking an infinite reconnect loop)
+                self.socket_receive_exit_flag.set()
 
         self.logger.info('receive thread exited')
 
@@ -413,6 +420,8 @@ class nobo:
 
         elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_ADD_COMPONENT ,self.API.RESPONSE_UPDATE_COMPONENT]:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
+            if dicti['zone_id'] == '-1' and dicti['tempsensor_for_zone_id'] != '-1':
+                dicti['zone_id'] = dicti['tempsensor_for_zone_id']
             self.components[dicti['serial']] = dicti
             self.logger.info('added/updated component: %s', dicti['name'])
 
@@ -475,12 +484,16 @@ class nobo:
     def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         self.send_command(command)
-    
+        for o in self.overrides: # Save override before command has finished executing
+            if self.overrides[o]['target_id'] == target_id:
+                self.overrides[o]['mode'] = mode
+                self.overrides[o]['type'] = type
+
     # Function to update name, week profile, temperature or override allowing for a zone
     def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
         # Initialize command with the current zone settings
         command = [self.API.UPDATE_ZONE] + list(self.zones[zone_id].values())
-        
+
         # Replace command with arguments that are not None. Is there a more elegant way?
         if name:
             command[2] = name
@@ -488,8 +501,10 @@ class nobo:
             command[3] = week_profile_id
         if temp_comfort_c:
             command[4] = temp_comfort_c
+            self.zones[zone_id]['temp_comfort_c'] = temp_comfort_c # Save setting before sending command
         if temp_eco_c:
             command[5] = temp_eco_c
+            self.zones[zone_id]['temp_eco_c'] = temp_eco_c # Save setting before sending command
         if override_allowed:
             command[6] = override_allowed
 
@@ -517,7 +532,7 @@ class nobo:
     def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
         current_time = (now.hour*100) + now.minute
         current_mode = ''
-        
+
         if self.zones[zone_id]['override_allowed'] == '1':
             for o in self.overrides:
                 if self.overrides[o]['mode'] == '0':
@@ -535,3 +550,26 @@ class nobo:
 
         self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
         return current_mode
+        
+    # Function to get temperature from a component
+    def get_current_component_temperature(self, serial):
+        current_temperature = 'N/A'
+
+        if serial in self.temperatures:
+            current_temperature = self.temperatures[serial]
+
+        self.logger.debug('Current temperature for component {} is {}'.format(self.components[serial]['name'], current_temperature))
+        return current_temperature
+
+    # Function to get (first) temperature in a zone
+    def get_current_zone_temperature(self, zone_id):
+        current_temperature = 'N/A'
+
+        for c in self.components:
+            if self.components[c]['zone_id'] == zone_id:
+                current_temperature = self.get_current_component_temperature(c)
+                if current_temperature != 'N/A':
+                    break
+
+        self.logger.debug('Current temperature for zone {} is {}'.format(self.zones[zone_id]['name'], current_temperature))
+        return current_temperature
