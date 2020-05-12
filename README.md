@@ -10,6 +10,8 @@ This system/service/software is not officially supported or endorsed by Glen Dim
 [src]: https://github.com/echoromeo/pynobo
 
 To get started, call using the three last digits in the hub serial
+    
+    from pynobo import nobo
 
     glen = nobo('123') 
 
