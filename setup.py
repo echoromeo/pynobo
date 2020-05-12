@@ -41,7 +41,7 @@ setup(
     # https://packaging.python.org/en/latest/single_source_version.html
     #
     # pynobo: API version + serial release + alpha/beta/rc 
-    version='1.1.0a2',  # Required
+    version='1.1.0a3',  # Required
 
     # This is a one-line description or tagline of what your project does. This
     # corresponds to the "Summary" metadata field:
@@ -95,7 +95,7 @@ setup(
         'Development Status :: 3 - Alpha',
 
         # Indicate who your project is intended for
-#        'Intended Audience :: Developers',
+        'Intended Audience :: Developers',
         'Topic :: Home Automation',
 
         # Pick your license as you wish
@@ -109,6 +109,7 @@ setup(
 #        'Programming Language :: Python :: 3.4',
 #        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.8',
     ],
 
     # This field adds keywords for your project which will appear on the
