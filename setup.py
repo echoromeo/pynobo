@@ -6,8 +6,8 @@ https://github.com/pypa/sampleproject
 
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
-# To use a consistent encoding
-from codecs import open
+
+
 from os import path
 
 here = path.abspath(path.dirname(__file__))
@@ -41,7 +41,7 @@ setup(
     # https://packaging.python.org/en/latest/single_source_version.html
     #
     # pynobo: API version + serial release + alpha/beta/rc 
-    version='1.1.0a3',  # Required
+    version='1.1.0a6',  # Required
 
     # This is a one-line description or tagline of what your project does. This
     # corresponds to the "Summary" metadata field:
@@ -78,11 +78,11 @@ setup(
 
     # This should be your name or the name of the organization which owns the
     # project.
-#    author='The Python Packaging Authority',  # Optional
+    author='echoromeo, capelevy',  # Optional
 
     # This should be a valid email address corresponding to the author listed
     # above.
-#    author_email='pypa-dev@googlegroups.com',  # Optional
+    author_email='felis.lynx@gmail.com',  # Optional
 
     # Classifiers help users find your project by categorizing it.
     #
@@ -109,7 +109,7 @@ setup(
 #        'Programming Language :: Python :: 3.4',
 #        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.8',
+#        'Programming Language :: Python :: 3.8',
     ],
 
     # This field adds keywords for your project which will appear on the
@@ -129,6 +129,12 @@ setup(
     #
 #    packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
     py_modules=["pynobo"],  # Required
+
+    # Specify which Python versions you support. In contrast to the
+    # 'Programming Language' classifiers above, 'pip install' will check this
+    # and refuse to install the project if the version does not match. See
+    # https://packaging.python.org/guides/distributing-packages-using-setuptools/#python-requires
+    python_requires='>=3.6, <4',
 
     # This field lists other packages that your project depends on to run.
     # Any package you put here will be installed by pip when your project is
