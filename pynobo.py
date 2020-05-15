@@ -423,7 +423,7 @@ class nobo:
         self.logger.info('receive thread exited')
 
     def response_handler(self, r):
-        """Handle the response(s) from the hub 
+        """Handle the response(s) from the hub and update the dictionaries accordingly
         
         Keyword arguments:  
         r -- a string list(s) of responses
@@ -627,7 +627,6 @@ class nobo:
         self.logger.debug('Current temperature for component {} is {}'.format(self.components[serial]['name'], current_temperature))
         return current_temperature
 
-    # Function to get (first) temperature in a zone
     def get_current_zone_temperature(self, zone_id):
         """Get the current temperature from (the first component in) a zone
 
