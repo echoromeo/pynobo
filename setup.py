@@ -20,18 +20,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 # Fields marked as "Optional" may be commented out.
 
 setup(
-    # This is the name of your project. The first time you publish this
-    # package, this name will be registered for you. It will determine how
-    # users can install this project, e.g.:
-    #
-    # $ pip install sampleproject
-    #
-    # And where it will live on PyPI: https://pypi.org/project/sampleproject/
-    #
-    # There are some restrictions on what makes a valid project name
-    # specification here:
-    # https://packaging.python.org/specifications/core-metadata/#name
-    name='pynobo',  # Required
+    name='pynobo',
 
     # Versions should comply with PEP 440:
     # https://www.python.org/dev/peps/pep-0440/
@@ -41,12 +30,8 @@ setup(
     # https://packaging.python.org/en/latest/single_source_version.html
     #
     # pynobo: API version + serial release + alpha/beta/rc 
-    version='1.1.0a6',  # Required
-
-    # This is a one-line description or tagline of what your project does. This
-    # corresponds to the "Summary" metadata field:
-    # https://packaging.python.org/specifications/core-metadata/#summary
-    description='Nobø Hub / Nobø Energy Control Websocket Interface',  # Required
+    version='1.1.0b1',
+    description='Nobø Hub / Nobø Energy Control Websocket Interface', 
 
     # This is an optional longer description of your project that represents
     # the body of text which users will see when they visit PyPI.
@@ -56,33 +41,19 @@ setup(
     #
     # This field corresponds to the "Description" metadata field:
     # https://packaging.python.org/specifications/core-metadata/#description-optional
-    long_description=long_description,  # Optional
-
-    # Denotes that our long_description is in Markdown; valid values are
-    # text/plain, text/x-rst, and text/markdown
-    #
-    # Optional if long_description is written in reStructuredText (rst) but
-    # required for plain-text or Markdown; if unspecified, "applications should
-    # attempt to render [the long_description] as text/x-rst; charset=UTF-8 and
-    # fall back to text/plain if it is not valid rst" (see link below)
-    #
-    # This field corresponds to the "Description-Content-Type" metadata field:
-    # https://packaging.python.org/specifications/core-metadata/#description-content-type-optional
-    long_description_content_type='text/markdown',  # Optional (see note above)
+    long_description=long_description,
+    long_description_content_type='text/markdown',
 
     # This should be a valid link to your project's main homepage.
     #
     # This field corresponds to the "Home-Page" metadata field:
     # https://packaging.python.org/specifications/core-metadata/#home-page-optional
-    url='https://github.com/echoromeo/pynobo',  # Optional
+    url='https://github.com/echoromeo/pynobo',
 
     # This should be your name or the name of the organization which owns the
     # project.
-    author='echoromeo, capelevy',  # Optional
-
-    # This should be a valid email address corresponding to the author listed
-    # above.
-    author_email='felis.lynx@gmail.com',  # Optional
+    author='echoromeo <felis.lynx@gmail.com>, capelevy',
+    #author_email='',  # Optional
 
     # Classifiers help users find your project by categorizing it.
     #
@@ -103,20 +74,15 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-#        'Programming Language :: Python :: 2',
-#        'Programming Language :: Python :: 2.7',
-#        'Programming Language :: Python :: 3',
-#        'Programming Language :: Python :: 3.4',
-#        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
-#        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3 :: Only',
     ],
 
     # This field adds keywords for your project which will appear on the
     # project page. What does your project relate to?
     #
     # Note that this is a string of words separated by whitespace, not a list.
-    keywords='hvac nobø heating',  # Optional
+    keywords='hvac nobø heating automation',
 
     # You can just specify package directories manually here if your project is
     # simple. Or you can use find_packages().
@@ -128,7 +94,7 @@ setup(
     #   py_modules=["my_module"],
     #
 #    packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
-    py_modules=["pynobo"],  # Required
+    py_modules=["pynobo"],
 
     # Specify which Python versions you support. In contrast to the
     # 'Programming Language' classifiers above, 'pip install' will check this
@@ -142,7 +108,7 @@ setup(
     #
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=[ 'time', 'datetime', 'warnings', 'logging', 'collections', 'socket', 'threading'],  # Optional
+    install_requires=[ 'time', 'datetime', 'warnings', 'logging', 'collections', 'socket', 'threading'],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). Users will be able to install these using the "extras"
@@ -195,7 +161,7 @@ setup(
     # issues, where the source is hosted, where to say thanks to the package
     # maintainers, and where to support the project financially. The key is
     # what's used to render the link text on PyPI.
-    project_urls={  # Optional
+    project_urls={
         'Bug Reports': 'https://github.com/echoromeo/pynobo/issues',
 #        'Funding': 'https://donate.pypi.org',
 #        'Say Thanks!': 'http://saythanks.io/to/example',
