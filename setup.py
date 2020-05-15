@@ -52,8 +52,8 @@ setup(
 
     # This should be your name or the name of the organization which owns the
     # project.
-    author='echoromeo <felis.lynx@gmail.com>, capelevy',
-    #author_email='',  # Optional
+    author='echoromeo, capelevy',
+    author_email='felis.lynx@gmail.com',  # Optional
 
     # Classifiers help users find your project by categorizing it.
     #
@@ -165,6 +165,6 @@ setup(
         'Bug Reports': 'https://github.com/echoromeo/pynobo/issues',
 #        'Funding': 'https://donate.pypi.org',
 #        'Say Thanks!': 'http://saythanks.io/to/example',
-        'Source': 'https://github.com/echoromeo/pynobo/',
+        'Source': 'https://github.com/echoromeo/pynobo/blob/master/pynobo.py',
     },
 )
