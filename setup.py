@@ -30,7 +30,7 @@ setup(
     # https://packaging.python.org/en/latest/single_source_version.html
     #
     # pynobo: API version + serial release + alpha/beta/rc 
-    version='1.1.0b1',
+    version='1.1.2',
     description='Nobø Hub / Nobø Energy Control Websocket Interface', 
 
     # This is an optional longer description of your project that represents
@@ -108,7 +108,7 @@ setup(
     #
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=[ 'time', 'datetime', 'warnings', 'logging', 'collections', 'socket', 'threading'],
+#    install_requires=[ 'time', 'datetime', 'warnings', 'logging', 'collections', 'socket', 'threading'], # All are there by default?
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). Users will be able to install these using the "extras"
