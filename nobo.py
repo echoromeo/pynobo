@@ -21,9 +21,9 @@ class nobo:
     class API:
         VERSION = '1.1'
 
-        START = 'HELLO'			    #HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>
-        REJECT = 'REJECT'			#REJECT <reject code>
-        HANDSHAKE = 'HANDSHAKE'	    #HANDSHAKE
+        START = 'HELLO'                #HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>
+        REJECT = 'REJECT'            #REJECT <reject code>
+        HANDSHAKE = 'HANDSHAKE'        #HANDSHAKE
 
         ADD_ZONE = 'A00'            # Adds Zone to hub database: A00 <Zone id> <Name> <Active week profile id> <Comfort temperature> <Eco temperature> <Allow overrides> <Active override id>
         ADD_COMPONENT = 'A01'       # Adds Component to hub database: A01 <Serial  number>  <Status> <Name> <Reverse on/off?> <Zoneld> <Active override Id> <Temperature sensor for zone>
@@ -553,23 +553,27 @@ class nobo:
         
     # Function to get temperature from a component
     def get_current_component_temperature(self, serial):
-        current_temperature = 'N/A'
+        current_temperature = None
 
         if serial in self.temperatures:
             current_temperature = self.temperatures[serial]
+            if current_temperature == 'N/A':
+                current_temperature = None
 
-        self.logger.debug('Current temperature for component {} is {}'.format(self.components[serial]['name'], current_temperature))
+        if current_temperature:
+            self.logger.debug('Current temperature for component {} is {}'.format(self.components[serial]['name'], current_temperature))
         return current_temperature
 
     # Function to get (first) temperature in a zone
     def get_current_zone_temperature(self, zone_id):
-        current_temperature = 'N/A'
+        current_temperature = None
 
         for c in self.components:
             if self.components[c]['zone_id'] == zone_id:
                 current_temperature = self.get_current_component_temperature(c)
-                if current_temperature != 'N/A':
+                if current_temperature != None:
                     break
 
-        self.logger.debug('Current temperature for zone {} is {}'.format(self.zones[zone_id]['name'], current_temperature))
+        if current_temperature:
+            self.logger.debug('Current temperature for zone {} is {}'.format(self.zones[zone_id]['name'], current_temperature))
         return current_temperature
