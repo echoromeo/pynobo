@@ -1,12 +1,5 @@
 #!/usr/bin/python3
 
-# Python Websocet Control of Nobø Hub - Nobø Energy Control
-# This system/service/software is not officially supported or endorsed by Glen Dimplex Nordic AS, and I am not an official partner of Glen Dimplex Nordic AS
-# API: https://www.glendimplex.no/media/15650/nobo-hub-api-v-1-1-integration-for-advanced-users.pdf
-
-# Call using the three last digits in the hub serial, or full serial and IP if you do not want to discover on UDP
-# Example: glen = nobo('123') or glen = nobo('123123123123', '10.0.0.128', False)
-
 import time
 import datetime
 import warnings
@@ -16,9 +9,17 @@ import socket
 import threading
 
 class nobo:
+    """This is where all the Nobø Hub magic happens!  
 
-    # All the commands and responses from API v1.1 - Some with sensible names, others not yet given better names
+    keyword arguments (init):  
+    serial -- The last 3 digits of the Ecohub serial number or the complete 12 digit serial number  
+    ip -- ip address to search for Ecohub at (default None)  
+    discover -- True/false for using UDP autodiscovery for the IP (default True)
+    """
+
     class API:
+        """All the commands and responses from API v1.1  
+        Some with sensible names, others not yet given better names"""
         VERSION = '1.1'
 
         START = 'HELLO'                #HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>
@@ -145,6 +146,13 @@ class nobo:
         DICT_NAME_TO_WEEK_PROFILE_STATUS = {NAME_ECO : WEEK_PROFILE_STATE_ECO, NAME_COMFORT : WEEK_PROFILE_STATE_COMFORT, NAME_AWAY : WEEK_PROFILE_STATE_AWAY, NAME_OFF : WEEK_PROFILE_STATE_OFF}
 
     def __init__(self, serial, ip=None, discover=True):
+        """Initialize logger and dictionaries, connect and start daemon thread
+
+        Keyword arguments:  
+        serial -- The last 3 digits of the Ecohub serial number or the complete 12 digit serial number  
+        ip -- ip address to search for Ecohub at (default None)  
+        discover -- True/false for using UDP autodiscovery for the IP (default True)
+        """
         self.logger = logging.getLogger(__name__)
         self.hub_info = {}
         self.zones = collections.OrderedDict()
@@ -259,6 +267,7 @@ class nobo:
             raise Exception('connection to hub rejected: {}'.format(response[0]))
 
     def reconnect_hub(self):
+        """Attempt to disconnect/close the connection and reconnect"""
         # close socket properly so connect_hub can restart properly
         if self.client:
             self.client.close()
@@ -289,11 +298,11 @@ class nobo:
         attempt to discover hubs matching that serial, ip address or both.
 
         Keyword arguments:
-        serial -- The last 3 digits of the Ecohub serial number or the complete
-                  12 digit serial number
+        serial -- The last 3 digits of the Ecohub serial number or the complete 12 digit serial number  
         ip -- ip address to search for Ecohub at (default None)
-        autodiscover_wait -- how long to wait for an autodiscover package from
-                             the hub (default 3.0)
+        autodiscover_wait -- how long to wait for an autodiscover package from the hub (default 3.0)  
+
+        Returns: a set of hubs matching that serial, ip address or both
         """
         discovered_hubs = set()
 
@@ -328,24 +337,35 @@ class nobo:
         ds.close()
         return discovered_hubs
 
-    # Function to send a list with command string(s)
-    def send_command(self, command_array):
-        self.logger.debug('sending: %s', command_array)
+    def send_command(self, commands):
+        """Send a list of command string(s) to the hub
+
+        Keyword arguments:  
+        commands -- list of commands, either strings or integers
+        """
+        self.logger.debug('sending: %s', commands)
 
         # Convert integers to string
-        for idx, c in enumerate(command_array):
+        for idx, c in enumerate(commands):
             if isinstance(c, int):
-                command_array[idx] = str(c)
+                commands[idx] = str(c)
 
-        message = ' '.join(command_array).encode('utf-8')
+        message = ' '.join(commands).encode('utf-8')
         try:
             self.client.send(message + b'\r')
         except ConnectionError as e:
             self.logger.info('lost connection to hub (%s)', e)
             self.socket_connected.clear()
 
-    # Function to receive a string from the hub and reformat string list
     def get_response(self, keep_alive=False, bufsize=4096):
+        """Get a response string from the hub and reformat string list before returning it
+        
+        Keyword arguments:  
+        keep_alive -- send handshake every ~14 seconds  
+        bufsize -- maximum bytes to receive from the socket
+
+        Returns: a string list(s) of responses
+        """
         response = b''
         while response[-1:] != b'\r':
             try:
@@ -373,8 +393,8 @@ class nobo:
 
         return response
 
-    # Task running in daemon thread
     def socket_receive(self):
+        """The task running in daemon thread"""
         while not self.socket_receive_exit_flag.is_set():
             try:
                 if self.socket_connected.is_set():
@@ -403,6 +423,12 @@ class nobo:
         self.logger.info('receive thread exited')
 
     def response_handler(self, r):
+        """Handle the response(s) from the hub and update the dictionaries accordingly
+        
+        Keyword arguments:  
+        r -- a string list(s) of responses
+        """
+
         # All info incoming, clear existing info
         if r[0] == self.API.RESPONSE_SENDING_ALL_INFO:
             self.socket_received_all_info.clear()
@@ -480,8 +506,17 @@ class nobo:
             self.logger.warning('behavior undefined for this response: {}'.format(r))
             warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?
 
-    # Function to override hub/zones/components. "Override" to mode 0 to disable an existing override
     def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
+        """Override hub/zones/components. Use OVERRIDE_MODE_NOMAL to disable an existing override.  
+
+        Keyword arguments:  
+        mode -- API.OVERRIDE_MODE. NORMAL, COMFORT, ECO or AWAY
+        type -- API.OVERRIDE_TYPE. NOW, TIMER, FROM_TO or CONSTANT  
+        target_type -- API.OVERRIDE_TARGET. GLOBAL or ZONE  
+        target_id -- the target id (default -1)  
+        end_time -- the end time (default -1)  
+        start_time -- the start time (default -1)
+        """        
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         self.send_command(command)
         for o in self.overrides: # Save override before command has finished executing
@@ -489,8 +524,18 @@ class nobo:
                 self.overrides[o]['mode'] = mode
                 self.overrides[o]['type'] = type
 
-    # Function to update name, week profile, temperature or override allowing for a zone
     def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
+        """Update the name, week profile, temperature or override allowing for a zone.  
+
+        Keyword arguments:  
+        zone_id -- the zone id  
+        name -- the new zone name (default None)  
+        week_profile_id -- the new id for a week profile (default None)  
+        temp_comfort_c -- the new comfort temperature (default None)  
+        temp_eco_c -- the new eco temperature (default None)  
+        override_allowed -- the new override allow setting (default None)
+        """        
+
         # Initialize command with the current zone settings
         command = [self.API.UPDATE_ZONE] + list(self.zones[zone_id].values())
 
@@ -510,8 +555,15 @@ class nobo:
 
         self.send_command(command)
 
-    # Function to find the status of a profile at a certain time in the week. Monday is day 0
     def get_week_profile_status(self, week_profile_id, dt=datetime.datetime.today()):
+        """Get the status of a week profile at a certain time in the week. Monday is day 0.  
+
+        Keyword arguments:  
+        week_profile_id -- the week profile id in question 
+        dt -- datetime for the status in question (Default datetime.datetime.today())
+
+        Return: the status for the profile
+        """        
         profile = self.week_profiles[week_profile_id]['profile']
         target = (dt.hour*100) + dt.minute
         # profile[0] is always 0000x, so this provides the initial status
@@ -528,11 +580,19 @@ class nobo:
         self.logger.debug('Status at {} on weekday {} is {}'.format(target, dt.weekday(), self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]))
         return self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
 
-    # Function to find mode in a zone right now
     def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
+        """Get the mode of a zone at a certain time. If the zone is overriden only now is possible
+
+        Keyword arguments:  
+        zone_id -- the zone id in question 
+        dt -- datetime for the status in question (Default datetime.datetime.today())
+
+        Return: the mode for the zone
+        """        
         current_time = (now.hour*100) + now.minute
         current_mode = ''
 
+        # check if the zone is overridden and to which mode
         if self.zones[zone_id]['override_allowed'] == '1':
             for o in self.overrides:
                 if self.overrides[o]['mode'] == '0':
@@ -551,8 +611,14 @@ class nobo:
         self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
         return current_mode
         
-    # Function to get temperature from a component
     def get_current_component_temperature(self, serial):
+        """Get the current temperature from a component
+
+        Keyword arguments:  
+        serial -- the serial for the component in question
+
+        Return: the temperature for the component (Default N/A)
+        """        
         current_temperature = None
 
         if serial in self.temperatures:
@@ -566,6 +632,13 @@ class nobo:
 
     # Function to get (first) temperature in a zone
     def get_current_zone_temperature(self, zone_id):
+        """Get the current temperature from (the first component in) a zone
+
+        Keyword arguments:  
+        zone_id -- the id for the zone in question
+
+        Return: the temperature for the (first) component in the zone (Default N/A)
+        """        
         current_temperature = None
 
         for c in self.components:
