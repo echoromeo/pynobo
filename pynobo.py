@@ -5,6 +5,7 @@ import datetime
 import warnings
 import logging
 import collections
+import asyncio
 import socket
 import threading
 
@@ -145,14 +146,49 @@ class nobo:
         DICT_NAME_TO_OVERRIDE_MODE = {NAME_NORMAL : OVERRIDE_MODE_NORMAL, NAME_COMFORT : OVERRIDE_MODE_COMFORT, NAME_ECO : OVERRIDE_MODE_ECO, NAME_AWAY : OVERRIDE_MODE_AWAY}
         DICT_NAME_TO_WEEK_PROFILE_STATUS = {NAME_ECO : WEEK_PROFILE_STATE_ECO, NAME_COMFORT : WEEK_PROFILE_STATE_COMFORT, NAME_AWAY : WEEK_PROFILE_STATE_AWAY, NAME_OFF : WEEK_PROFILE_STATE_OFF}
 
-    def __init__(self, serial, ip=None, discover=True):
-        """Initialize logger and dictionaries, connect and start daemon thread
 
+    class DiscoverProtocol(asyncio.DatagramProtocol):
+        def __init__(self, logger, serial, ip = None):
+            self.logger = logger
+            self.serial = serial
+            self.ip = ip
+            self.hubs = set()
+
+        def connection_made(self, transport: asyncio.transports.DatagramTransport):
+            self.transport = transport
+
+        def datagram_received(self, data: bytes, addr):
+            msg = data.decode()
+            self.logger.info('broadcast received: %s', msg)
+            # Expected string “__NOBOHUB__123123123”, where 123123123 is replaced with the first 9 digits of the Hub’s serial number.
+            if msg.startswith("__NOBOHUB__"):
+                discover_serial = msg[11]
+                discover_ip = addr[0]
+                if len(self.serial) == 12:
+                    if discover_serial != self.serial[0:9]:
+                        # This is not the Ecohub you are looking for
+                        discover_serial = None
+                else:
+                    discover_serial += self.serial
+                if self.ip and discover_ip != self.ip:
+                    # This is not the Ecohub you are looking for
+                    discover_ip = None
+                if discover_ip and discover_serial:
+                    self.hubs.add( (discover_ip, discover_serial) )
+
+
+    def __init__(self, serial, ip=None, discover=True, loop: asyncio.AbstractEventLoop = None):
+        """Initialize logger and dictionaries
         Keyword arguments:  
-        serial -- The last 3 digits of the Ecohub serial number or the complete 12 digit serial number  
-        ip -- ip address to search for Ecohub at (default None)  
+        serial -- The last 3 digits of the Ecohub serial number or the complete 12 digit serial number
+        ip -- ip address to search for Ecohub at (default None)
         discover -- True/false for using UDP autodiscovery for the IP (default True)
+        loop -- the asyncio event loop to use
         """
+        self.loop = loop
+        self.serial = serial
+        self.ip = ip
+        self.discover = discover
         self.logger = logging.getLogger(__name__)
         self.hub_info = {}
         self.zones = collections.OrderedDict()
@@ -161,16 +197,20 @@ class nobo:
         self.overrides = collections.OrderedDict()
         self.temperatures = collections.OrderedDict()
 
+
+    async def start(self):
+        """Start the TCP client"""
+
         # Get a socket connection, either by scanning or directly
-        if discover:
-            discovered_hubs = self.discover_hubs(serial=serial, ip=ip)
+        if self.discover:
+            discovered_hubs = await self.discover_hubs()
             if not discovered_hubs:
                 self.logger.error("Failed to discover any Nobø Ecohubs")
                 raise Exception("Failed to discover any Nobø Ecohubs")
             while discovered_hubs:
                 (discover_ip, discover_serial) = discovered_hubs.pop()
                 try:
-                    self.connect_hub(discover_ip, discover_serial)
+                    await self.connect_hub(discover_ip, discover_serial)
                     break  # We connect to the first valid hub, no reason to try the rest
                 except Exception as e:
                     # This might not have been the Ecohub we wanted (wrong serial)
@@ -178,56 +218,54 @@ class nobo:
                                         discover_ip, discover_serial, e))
         else:
             # check if we have an IP
-            if not ip:
+            if not self.ip:
                 self.logger.error('Could not connect, no ip address provided')
                 raise ValueError('Could not connect, no ip address provided')
 
             # check if we have a valid serial before we start connection
-            if len(serial) != 12:
+            if len(self.serial) != 12:
                 self.logger.error('Could not connect, no valid serial number provided')
                 raise ValueError('Could not connect, no valid serial number provided')
 
-            self.connect_hub(ip, serial)
+            await self.connect_hub(self.ip, self.serial)
 
-        if not self.client:
+        if not self.writer:
             self.logger.error("Failed to connect to Ecohub")
             raise Exception("Failed to connect to Ecohub")
 
         # start thread for continously receiving new data from hub
-        self.socket_receive_thread = threading.Thread(target=self.socket_receive)
-        self.socket_receive_thread.daemon = True
-        self.socket_receive_exit_flag = threading.Event()
-        self.socket_received_all_info = threading.Event()
-        self.socket_connected = threading.Event()
-        self.socket_connected.set()
-        self.socket_receive_thread.start()
+        #self.socket_receive_thread = threading.Thread(target=self.socket_receive)
+        #self.socket_receive_thread.daemon = True
+        #self.socket_receive_exit_flag = threading.Event()
+        #self.socket_received_all_info = threading.Event()
+        #self.socket_connected = threading.Event()
+        #self.socket_connected.set()
+        #self.socket_receive_thread.start()
 
         # Fetch all info
-        self.send_command([self.API.GET_ALL_INFO])
-        self.socket_received_all_info.wait()
+        #self.send_command([self.API.GET_ALL_INFO])
+        #self.socket_received_all_info.wait()
 
         self.logger.info('connected to Nobø Hub')
 
 
-    def connect_hub(self, ip, serial):
+    async def connect_hub(self, ip, serial):
         """Attempt initial connection and handshake
 
         Keyword arguments:
         ip -- The ecohub ip address to connect to
         serial -- The complete 12 digit serial number of the hub to connect to
         """
-        # create an ipv4 (AF_INET) socket object using the tcp protocol (SOCK_STREAM)
-        self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client.settimeout(5)
 
-        # connect the client - let a timeout exception be raised?
-        self.client.connect((ip, 27779))
+        self.reader, self.writer = await asyncio.open_connection(ip, 27779)
+
+        #self.client.settimeout(5)
 
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
-        self.send_command([self.API.START, self.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
+        await self.send_command([self.API.START, self.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
 
         # receive the response data (4096 is recommended buffer size)
-        response = self.get_response()
+        response = await self.get_response()
         self.logger.debug('first handshake response: %s', response)
 
         # successful response is "HELLO <its version of command set>\r"
@@ -239,7 +277,7 @@ class nobo:
                 warnings.warn('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION)) #overkill?
 
             # send/receive handshake complete
-            self.send_command([self.API.HANDSHAKE])
+            await self.send_command([self.API.HANDSHAKE])
             self.last_handshake = time.time()
             response = self.get_response()
             self.logger.debug('second handshake response: %s', response)
@@ -252,8 +290,9 @@ class nobo:
             else:
                 # Something went wrong...
                 self.logger.error("Final handshake not as expected %s", response[0][0])
-                self.client.close()
-                self.client = None
+                self.writer.close()
+                await self.writer.wait_closed()
+                self.writer = None
                 raise Exception("Final handshake not as expected {}".format(response[0][0]))
         else:
             # Reject response: "REJECT <reject code>\r"
@@ -262,32 +301,35 @@ class nobo:
             # 2=Wrong number of arguments.
             # 3=Timestamp incorrectly formatted
             self.logger.error('connection to hub rejected: {}'.format(response[0]))
-            self.client.close()
-            self.client = None
+            self.writer.close()
+            await self.writer.wait_closed()
+            self.writer = None
             raise Exception('connection to hub rejected: {}'.format(response[0]))
 
-    def reconnect_hub(self):
+
+    async def reconnect_hub(self):
         """Attempt to disconnect/close the connection and reconnect"""
         # close socket properly so connect_hub can restart properly
-        if self.client:
-            self.client.close()
-            self.client = None
+        if self.writer:
+            self.writer.close()
+            await self.writer.wait_closed()
+            self.writer = None
 
         # attempt reconnect to the lost hub
         rediscovered_hub = None
         while not rediscovered_hub:
             self.logger.debug('hub not rediscovered')
-            rediscovered_hub = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip)
-            time.sleep(10)
-        self.connect_hub(self.hub_ip, self.hub_serial)
-        self.socket_connected.set()
+            rediscovered_hub = self.discover_hubs()
+            await asyncio.sleep(10)
+        await self.connect_hub(self.hub_ip, self.hub_serial)
         self.logger.info('reconnected to Nobø Hub')
 
         # Update all info
-        self.send_command([self.API.GET_ALL_INFO])
+        await self.send_command([self.API.GET_ALL_INFO])
 
-    def discover_hubs(self, serial, ip=None, autodiscover_wait=3.0):
-        """Attempts to autodiscover Nobø Ecohubs on the local networkself.
+
+    async def discover_hubs(self, autodiscover_wait=3.0):
+        """Attempt to autodiscover Nobø Ecohubs on the local network.
 
         Every two seconds, the Hub sends one UDP broadcast packet on port 10000
         to broadcast IP 255.255.255.255, we listen for this package, and collect
@@ -304,40 +346,17 @@ class nobo:
 
         Returns: a set of hubs matching that serial, ip address or both
         """
-        discovered_hubs = set()
+        transport, protocol = await self.loop.create_datagram_endpoint(
+            lambda: nobo.DiscoverProtocol(self.logger, self.serial, ip = self.ip),
+            local_addr=('0.0.0.0', 10000))
+        try:
+            await asyncio.sleep(autodiscover_wait)
+        finally:
+            transport.close()
+        return protocol.hubs
 
-        ds = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ds.settimeout(0.1)
-        ds.bind(('',10000))
 
-        start_time = time.time()
-        while (start_time + autodiscover_wait > time.time()):
-            try:
-                broadcast = ds.recvfrom(1024)
-            except socket.timeout:
-                broadcast = ""
-            else:
-                self.logger.info('broadcast received: %s', broadcast)
-                # Expected string “__NOBOHUB__123123123”, where 123123123 is replaced with the first 9 digits of the Hub’s serial number.
-                if broadcast[0][:11] == b'__NOBOHUB__':
-                    discover_serial = str(broadcast[0][-9:], 'utf-8')
-                    discover_ip = broadcast[1][0]
-                    if len(serial) == 12:
-                        if discover_serial != serial[0:9]:
-                            # This is not the Ecohub you are looking for
-                            discover_serial = None
-                    else:
-                        discover_serial += serial
-                    if ip and discover_ip != ip:
-                        # This is not the Ecohub you are looking for
-                        discover_ip = None
-                    if discover_ip and discover_serial:
-                        discovered_hubs.add( (discover_ip, discover_serial) )
-
-        ds.close()
-        return discovered_hubs
-
-    def send_command(self, commands):
+    async def send_command(self, commands):
         """Send a list of command string(s) to the hub
 
         Keyword arguments:  
@@ -352,12 +371,16 @@ class nobo:
 
         message = ' '.join(commands).encode('utf-8')
         try:
-            self.client.send(message + b'\r')
+            self.writer.write(message + b'\r')
+            await self.writer.drain()
         except ConnectionError as e:
             self.logger.info('lost connection to hub (%s)', e)
-            self.socket_connected.clear()
+            self.writer.close()
+            await self.writer.wait_closed()
+            #self.socket_connected.clear()
 
-    def get_response(self, keep_alive=False, bufsize=4096):
+
+    async def get_response(self, keep_alive=False, bufsize=4096):
         """Get a response string from the hub and reformat string list before returning it
         
         Keyword arguments:  
@@ -369,23 +392,25 @@ class nobo:
         response = b''
         while response[-1:] != b'\r':
             try:
-                response += self.client.recv(bufsize)
+                response += await self.reader.read(bufsize)
             except socket.timeout:
                 # handshake needs to be sent every < 30 sec, preferably every 14 seconds
                 if keep_alive:
                     now = time.time()
                     if now - self.last_handshake > 14:
-                        self.send_command([self.API.HANDSHAKE])
+                        await self.send_command([self.API.HANDSHAKE])
                         self.last_handshake = now
                 else:
                     break
             except ConnectionError as e:
                 self.logger.info('lost connection to hub (%s)', e)
-                self.socket_connected.clear()
+                self.writer.close()
+                await self.writer.wait_closed()
+                #self.socket_connected.clear()
                 break
 
         # Handle more than one response in one receive
-        response_list = str(response, 'utf-8').split('\r')
+        response_list = str(response.decode()).split('\r')
         response = []
         for r in response_list:
             if r:
@@ -431,7 +456,7 @@ class nobo:
 
         # All info incoming, clear existing info
         if r[0] == self.API.RESPONSE_SENDING_ALL_INFO:
-            self.socket_received_all_info.clear()
+            #self.socket_received_all_info.clear()
             self.hub_info = {}
             self.zones = {}
             self.components = {}
@@ -465,8 +490,8 @@ class nobo:
         elif r[0] in [self.API.RESPONSE_HUB_INFO, self.API.RESPONSE_UPDATE_HUB_INFO]:
             self.hub_info = collections.OrderedDict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
             self.logger.info('updated hub info: %s', self.hub_info)
-            if r[0] == self.API.RESPONSE_HUB_INFO:
-                self.socket_received_all_info.set()
+            #if r[0] == self.API.RESPONSE_HUB_INFO:
+            #    self.socket_received_all_info.set()
 
         # The removed info messages
         elif r[0] == self.API.RESPONSE_REMOVE_ZONE:
@@ -506,7 +531,7 @@ class nobo:
             self.logger.warning('behavior undefined for this response: {}'.format(r))
             warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?
 
-    def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
+    async def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         """Override hub/zones/components. Use OVERRIDE_MODE_NOMAL to disable an existing override.  
 
         Keyword arguments:  
@@ -518,13 +543,13 @@ class nobo:
         start_time -- the start time (default -1)
         """        
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
-        self.send_command(command)
+        await self.send_command(command)
         for o in self.overrides: # Save override before command has finished executing
             if self.overrides[o]['target_id'] == target_id:
                 self.overrides[o]['mode'] = mode
                 self.overrides[o]['type'] = type
 
-    def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
+    async def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
         """Update the name, week profile, temperature or override allowing for a zone.  
 
         Keyword arguments:  
@@ -553,7 +578,7 @@ class nobo:
         if override_allowed:
             command[6] = override_allowed
 
-        self.send_command(command)
+        await self.send_command(command)
 
     def get_week_profile_status(self, week_profile_id, dt=datetime.datetime.today()):
         """Get the status of a week profile at a certain time in the week. Monday is day 0.  
