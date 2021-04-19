@@ -7,7 +7,6 @@ import logging
 import collections
 import asyncio
 import socket
-import threading
 
 class nobo:
     """This is where all the Nobø Hub magic happens!  
@@ -162,7 +161,7 @@ class nobo:
             self.logger.info('broadcast received: %s', msg)
             # Expected string “__NOBOHUB__123123123”, where 123123123 is replaced with the first 9 digits of the Hub’s serial number.
             if msg.startswith("__NOBOHUB__"):
-                discover_serial = msg[11]
+                discover_serial = msg[11:]
                 discover_ip = addr[0]
                 if len(self.serial) == 12:
                     if discover_serial != self.serial[0:9]:
@@ -199,7 +198,7 @@ class nobo:
 
 
     async def start(self):
-        """Start the TCP client"""
+        """Discover Ecuhub and start the TCP client"""
 
         # Get a socket connection, either by scanning or directly
         if self.discover:
@@ -279,7 +278,7 @@ class nobo:
             # send/receive handshake complete
             await self.send_command([self.API.HANDSHAKE])
             self.last_handshake = time.time()
-            response = self.get_response()
+            response = await self.get_response()
             self.logger.debug('second handshake response: %s', response)
 
             if response[0][0] == self.API.HANDSHAKE:
@@ -446,6 +445,7 @@ class nobo:
                 self.socket_receive_exit_flag.set()
 
         self.logger.info('receive thread exited')
+
 
     def response_handler(self, r):
         """Handle the response(s) from the hub and update the dictionaries accordingly
