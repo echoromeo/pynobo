@@ -22,9 +22,9 @@ class nobo:
         Some with sensible names, others not yet given better names"""
         VERSION = '1.1'
 
-        START = 'HELLO'                #HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>
-        REJECT = 'REJECT'            #REJECT <reject code>
-        HANDSHAKE = 'HANDSHAKE'        #HANDSHAKE
+        START = 'HELLO'             #HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>
+        REJECT = 'REJECT'           #REJECT <reject code>
+        HANDSHAKE = 'HANDSHAKE'     #HANDSHAKE
 
         ADD_ZONE = 'A00'            # Adds Zone to hub database: A00 <Zone id> <Name> <Active week profile id> <Comfort temperature> <Eco temperature> <Allow overrides> <Active override id>
         ADD_COMPONENT = 'A01'       # Adds Component to hub database: A01 <Serial  number>  <Status> <Name> <Reverse on/off?> <Zoneld> <Active override Id> <Temperature sensor for zone>
@@ -416,7 +416,7 @@ class nobo:
                     self.reconnect_hub()
             except Exception as e:
                 # Ops, now we have real problems
-                self.logger.error("Unhandeled exception: %s", e, exc_info=1)
+                self.logger.error("Unhandled exception: %s", e, exc_info=1)
                 # Just disconnect (in stead of risking an infinite reconnect loop)
                 self.socket_receive_exit_flag.set()
 
