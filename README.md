@@ -1,4 +1,4 @@
-# Nobø Hub / Nobø Energy Control Websocket Interface
+# Nobø Hub / Nobø Energy Control TCP/IP Interface
 
 This system/service/software is not officially supported or endorsed by Glen Dimplex Nordic AS, and the authors/maintainer(s) are not official partner of Glen Dimplex Nordic AS
 
@@ -8,48 +8,63 @@ This system/service/software is not officially supported or endorsed by Glen Dim
 
 ## Quick Start
 
+    import asyncio
     from pynobo import nobo
 
-Either call using the three last digits in the hub serial
+    async def main():
+        # Either call using the three last digits in the hub serial
+        hub = nobo('123') 
+        # or full serial and IP if you do not want to discover on UDP:
+        hub = nobo('123123123123', '10.0.0.128', False)
+
+        # Connect to the hub
+        await hub.start()
     
-    glen = nobo('123') 
+        # Look at the data 
+        def update(hub):
+            print(hub.hub_info)
+            print(hub.zones)
+            print(hub.components)
+            print(hub.week_profiles)
+            print(hub.overrides)
+            print(hub.temperatures)
+    
+        # Get current data
+        update(hub)
+    
+        # Listen data updates
+        def callback():
+            update(hub)
+        hub.register_callback(callback=callback)
+    
+        # Wait for data updates
+        await asyncio.sleep(60)
+    
+        # Stop the connection
+        await hub.stop()
 
-or full serial and IP if you do not want to discover on UDP:
-
-    glen = nobo('123123123123', '10.0.0.128', False)
-
-after that you can start playing around using the different dictionaries that should be loaded with whatever the hub gave you:
-
-    glen.hub_info
-    glen.zones
-    glen.components
-    glen.week_profiles
-    glen.overrides
-    glen.temperatures
+    asyncio.run(main())
 
 ## Available functionality
 
+* `nobo` class - When called it will initialize logger and dictionaries, connect to hub and start daemon thread.
+* `nobo.API` class - All the commands and responses from API v1.1, Some with sensible names, others not yet given better names.
+* `nobo.DiscoveryProtocol` - An `asyncio.DatagramProtocol` used to discover Nobø Ecohubs on the local network.
 
-* nobo class - When called it will initialize logger and dictionaries, connect to hub and start daemon thread
+### Background Tasks
 
-* nobo.API class - All the commands and responses from API v1.1, Some with sensible names, others not yet given better names 
+Calling `start()` will first try to discover the Nobø Ecohub on the local network, unless an IP address is provided.
+If an IP address is provided, or the hub is discovered, it will attempt to connect to it, and if successful, start
+the following tasks:
 
+* keep_alive - Send a periodic keep alive message to the hub
+* socket_receive - Handle incoming messages from the hub
 
-### Background Functions
-
-These functions run in the background after initialization of the nobo class
-
-* connect_hub - Attempt initial connection and handshake
-* discover_hubs - Attempts to autodiscover Nobø Ecohubs on the local networkself
-* reconnect_hub - Attempt to disconnect/close the connection and reconnect
- 
-* socket_receive - The task running in daemon thread for receiving and handling responses from the hub
-* get_response - Get a response string from the hub and reformat string list before returning it
-* response_handler - Handle the response(s) from the hub and updated the dictionaries accordingly
+If the connection is lost, it will attempt to reconnect.
 
 ### Command Functions
 
-These functions sends commands to the hub
+These functions sends commands to the hub.
 
 * send_command - Send a list of command string(s) to the hub
 * create_override - Override hub/zones/components
@@ -57,7 +72,8 @@ These functions sends commands to the hub
 
 ### Dictionary helper functions
 
-These functions simplifies getting the data you want from the dictionaries
+These functions simplifies getting the data you want from the dictionaries. They do
+not perform any I/O, and can safely be called from the event loop.
 
 * get_week_profile_status - Get the status of a week profile at a certain time in the week 
 * get_current_zone_mode - Get the mode of a zone at a certain time
