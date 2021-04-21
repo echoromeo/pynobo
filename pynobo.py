@@ -205,7 +205,7 @@ class nobo:
     def register_callback(self, callback=lambda *args, **kwargs: None):
         """
         Register a callback to notify updates to the hub state. The callback MUST be safe to call
-        from the event loop. No parameters are passed to the callback function.
+        from the event loop. The nobo instance is passed to the callback function.
 
         :param callback: a callback method
         """
@@ -544,7 +544,7 @@ class nobo:
             warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?
 
         for callback in self.callbacks:
-            callback()
+            callback(self)
 
     async def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         """

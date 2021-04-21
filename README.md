@@ -19,8 +19,8 @@ This system/service/software is not officially supported or endorsed by Glen Dim
 
         # Connect to the hub
         await hub.start()
-    
-        # Look at the data 
+
+        # Inspect what you get
         def update(hub):
             print(hub.hub_info)
             print(hub.zones)
@@ -29,15 +29,13 @@ This system/service/software is not officially supported or endorsed by Glen Dim
             print(hub.overrides)
             print(hub.temperatures)
     
-        # Get current data
+        # Listen for data updates
+        hub.register_callback(callback=update)
+
+        # Get initial data
         update(hub)
     
-        # Listen data updates
-        def callback():
-            update(hub)
-        hub.register_callback(callback=callback)
-    
-        # Wait for data updates
+        # Hang around and wait for data updates
         await asyncio.sleep(60)
     
         # Stop the connection
