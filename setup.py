@@ -30,7 +30,7 @@ setup(
     # https://packaging.python.org/en/latest/single_source_version.html
     #
     # pynobo: API version + serial release + alpha/beta/rc 
-    version='1.1.2',
+    version='2.0.0',
     description='Nobø Hub / Nobø Energy Control Websocket Interface', 
 
     # This is an optional longer description of your project that represents
