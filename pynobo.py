@@ -145,7 +145,7 @@ class nobo:
     class DiscoveryProtocol(asyncio.DatagramProtocol):
         """Protocol to discover Nobø Echohub on local network."""
 
-        def __init__(self, serial, ip = None):
+        def __init__(self, serial = "", ip = None):
             """
             :param serial: The last 3 digits of the Ecohub serial number or the complete 12 digit serial number
             :param ip: ip address to search for Ecohub at (default None)
@@ -176,7 +176,6 @@ class nobo:
                     discover_ip = None
                 if discover_ip and discover_serial:
                     self.hubs.add( (discover_ip, discover_serial) )
-
 
     def __init__(self, serial, ip=None, discover=True, loop: asyncio.AbstractEventLoop = None):
         """
@@ -224,7 +223,7 @@ class nobo:
 
         # Get a socket connection, either by scanning or directly
         if self.discover:
-            discovered_hubs = await self.discover_hubs()
+            discovered_hubs = await self.discover_hubs(serial=self.serial, ip=self.ip, loop=self.loop)
             if not discovered_hubs:
                 self.logger.error("Failed to discover any Nobø Ecohubs")
                 raise Exception("Failed to discover any Nobø Ecohubs")
@@ -348,31 +347,42 @@ class nobo:
         rediscovered_hub = None
         while not rediscovered_hub:
             self.logger.debug('hub not rediscovered')
-            rediscovered_hub = self.discover_hubs()
+            rediscovered_hub = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip, loop=self.loop)
             await asyncio.sleep(10)
         await self.connect_hub(self.hub_ip, self.hub_serial)
         self.logger.info('reconnected to Nobø Hub')
 
-    async def discover_hubs(self, autodiscover_wait=3.0):
+    @staticmethod
+    async def discover_hubs(serial="", ip=None, autodiscover_wait=3.0, loop=None):
         """
         Attempt to autodiscover Nobø Ecohubs on the local network.
 
         Every two seconds, the Hub sends one UDP broadcast packet on port 10000
         to broadcast IP 255.255.255.255, we listen for this package, and collect
         every packet that contains the magic __NOBOHUB__ identifier. The set
-        of (ip, serial) tuples is returned
+        of (ip, serial) tuples is returned.
 
         Specifying a complete 12 digit serial number or an ip address, will only
         attempt to discover hubs matching that serial, ip address or both.
 
+        Specifyng the last 3 digits of the serial number will append this to the
+        discovered serial number.
+
+        Not specifying serial or ip will include all found hubs on the network,
+        but only the discovered part of the serial number (first 9 digits).
+
+        :param serial: The last 3 digits of the Ecohub serial number or the complete 12 digit serial number
+        :param ip: ip address to search for Ecohub at (default None)
         :param autodiscover_wait: how long to wait for an autodiscover package from the hub (default 3.0)
 
         :return: a set of hubs matching that serial, ip address or both
         """
 
-        transport, protocol = await self.loop.create_datagram_endpoint(
-            lambda: nobo.DiscoveryProtocol(self.serial, ip = self.ip),
-            local_addr=('0.0.0.0', 10000))
+        loop = asyncio.get_event_loop() if loop is None else loop
+        transport, protocol = await loop.create_datagram_endpoint(
+            lambda: nobo.DiscoveryProtocol(serial, ip),
+            local_addr=('0.0.0.0', 10000),
+            reuse_port=True)
         try:
             await asyncio.sleep(autodiscover_wait)
         finally:
