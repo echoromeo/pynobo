@@ -8,6 +8,8 @@ import collections
 import asyncio
 from contextlib import suppress
 
+_LOGGER = logging.getLogger(__name__)
+
 class nobo:
     """This is where all the Nobø Hub magic happens!"""
 
@@ -153,14 +155,13 @@ class nobo:
             self.serial = serial
             self.ip = ip
             self.hubs = set()
-            self.logger = logging.getLogger(__name__)
 
         def connection_made(self, transport: asyncio.transports.DatagramTransport):
             self.transport = transport
 
         def datagram_received(self, data: bytes, addr):
             msg = data.decode("utf-8")
-            self.logger.info('broadcast received: %s', msg)
+            _LOGGER.info('broadcast received: %s', msg)
             # Expected string “__NOBOHUB__123123123”, where 123123123 is replaced with the first 9 digits of the Hub’s serial number.
             if msg.startswith("__NOBOHUB__"):
                 discover_serial = msg[11:]
@@ -169,6 +170,8 @@ class nobo:
                     if discover_serial != self.serial[0:9]:
                         # This is not the Ecohub you are looking for
                         discover_serial = None
+                    else:
+                        discover_serial = self.serial
                 else:
                     discover_serial += self.serial
                 if self.ip and discover_ip != self.ip:
@@ -188,23 +191,27 @@ class nobo:
         """
 
         self.loop = asyncio.get_event_loop() if loop is None else loop
-        self.received_all_info = False
         self.serial = serial
         self.ip = ip
         self.discover = discover
-        self.logger = logging.getLogger(__name__)
+
+        self.callbacks = []
+        self.reader = None
+        self.writer = None
+
+        self.received_all_info = False
         self.hub_info = {}
         self.zones = collections.OrderedDict()
         self.components = collections.OrderedDict()
         self.week_profiles = collections.OrderedDict()
         self.overrides = collections.OrderedDict()
         self.temperatures = collections.OrderedDict()
-        self.callbacks = []
 
     def register_callback(self, callback=lambda *args, **kwargs: None):
         """
         Register a callback to notify updates to the hub state. The callback MUST be safe to call
-        from the event loop. The nobo instance is passed to the callback function.
+        from the event loop. The nobo instance is passed to the callback function. Limit callbacks
+        to read state.
 
         :param callback: a callback method
         """
@@ -221,39 +228,45 @@ class nobo:
     async def start(self):
         """Discover Ecohub and start the TCP client."""
 
-        # Get a socket connection, either by scanning or directly
-        if self.discover:
-            discovered_hubs = await self.discover_hubs(serial=self.serial, ip=self.ip, loop=self.loop)
-            if not discovered_hubs:
-                self.logger.error("Failed to discover any Nobø Ecohubs")
-                raise Exception("Failed to discover any Nobø Ecohubs")
-            while discovered_hubs:
-                (discover_ip, discover_serial) = discovered_hubs.pop()
-                try:
-                    await self.connect_hub(discover_ip, discover_serial)
-                    break  # We connect to the first valid hub, no reason to try the rest
-                except Exception as e:
-                    # This might not have been the Ecohub we wanted (wrong serial)
-                    self.logger.warning("Could not connect to {}:{} - {}".format(
-                        discover_ip, discover_serial, e))
-        else:
-            # check if we have an IP
-            if not self.ip:
-                self.logger.error('Could not connect, no ip address provided')
-                raise ValueError('Could not connect, no ip address provided')
-
-            # check if we have a valid serial before we start connection
-            if len(self.serial) != 12:
-                self.logger.error('Could not connect, no valid serial number provided')
-                raise ValueError('Could not connect, no valid serial number provided')
-
-            await self.connect_hub(self.ip, self.serial)
-
         if not self.writer:
-            self.logger.error("Failed to connect to Ecohub")
-            raise Exception("Failed to connect to Ecohub")
+            # Get a socket connection, either by scanning or directly
+            if self.discover:
+                _LOGGER.info("Looking for Nobø Ecohub serial: %s, ip: %s", self.serial, self.ip)
+                discovered_hubs = await self.discover_hubs(serial=self.serial, ip=self.ip, loop=self.loop)
+                if not discovered_hubs:
+                    _LOGGER.error("Failed to discover any Nobø Ecohubs")
+                    raise Exception("Failed to discover any Nobø Ecohubs")
+                while discovered_hubs:
+                    (discover_ip, discover_serial) = discovered_hubs.pop()
+                    try:
+                        await self.connect_hub(discover_ip, discover_serial)
+                        break  # We connect to the first valid hub, no reason to try the rest
+                    except Exception as e:
+                        # This might not have been the Ecohub we wanted (wrong serial)
+                        _LOGGER.warning("Could not connect to {}:{} - {}".format(
+                            discover_ip, discover_serial, e))
+            else:
+                # check if we have an IP
+                if not self.ip:
+                    _LOGGER.error('Could not connect, no ip address provided')
+                    raise ValueError('Could not connect, no ip address provided')
 
-        self.logger.info('connected to Nobø Ecohub')
+                # check if we have a valid serial before we start connection
+                if len(self.serial) != 12:
+                    _LOGGER.error('Could not connect, no valid serial number provided')
+                    raise ValueError('Could not connect, no valid serial number provided')
+
+                await self.connect_hub(self.ip, self.serial)
+
+            if not self.writer:
+                _LOGGER.error("Failed to connect to Ecohub")
+                raise Exception("Failed to connect to Ecohub")
+
+        # Start the tasks to send keep-alive and receive data
+        self.keep_alive_task = self.loop.create_task(self.keep_alive())
+        self.socket_receive_task = self.loop.create_task(self.socket_receive())
+
+        _LOGGER.info('connected to Nobø Ecohub')
 
     async def stop(self):
         """Stop the keep-alive and receiver tasks and close the connection to Nobø Ecohub."""
@@ -264,7 +277,7 @@ class nobo:
         with suppress(asyncio.CancelledError):
             await self.keep_alive_task
         await self.close()
-        self.logger.info('disconnected from Nobø Ecohub')
+        _LOGGER.info('disconnected from Nobø Ecohub')
 
     async def close(self):
         """Close the connection to Nobø Ecohub."""
@@ -288,21 +301,20 @@ class nobo:
 
         # receive the response data (4096 is recommended buffer size)
         response = await asyncio.wait_for(self.get_response(), timeout=5)
-        self.logger.debug('first handshake response: %s', response)
+        _LOGGER.debug('first handshake response: %s', response)
 
         # successful response is "HELLO <its version of command set>\r"
         if response[0][0] == self.API.START:
             # send “REJECT\r” if command set is not supported? No need to abort if Hub is ok with the mismatch?
             if response[0][1] != self.API.VERSION:
                 #await self.send_command([self.API.REJECT])
-                self.logger.warning('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION))
+                _LOGGER.warning('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION))
                 warnings.warn('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION)) #overkill?
 
             # send/receive handshake complete
             await self.send_command([self.API.HANDSHAKE])
-            self.last_handshake = time.time()
             response = await asyncio.wait_for(self.get_response(), timeout=5)
-            self.logger.debug('second handshake response: %s', response)
+            _LOGGER.debug('second handshake response: %s', response)
 
             if response[0][0] == self.API.HANDSHAKE:
                 # Connect OK, store connection information for later reconnects
@@ -318,14 +330,13 @@ class nobo:
                     responses = await self.get_response()
                     for r in responses:
                         self.response_handler(r)
-
-                # Start the tasks to send keep-alive and receive data
-                self.keep_alive_task = self.loop.create_task(self.keep_alive())
-                self.socket_receive_task = self.loop.create_task(self.socket_receive())
+                # Initial state received - notify listeners.
+                for callback in self.callbacks:
+                    callback(self)
                 return
             else:
                 # Something went wrong...
-                self.logger.error("Final handshake not as expected %s", response[0][0])
+                _LOGGER.error("Final handshake not as expected %s", response[0][0])
                 await self.close()
                 raise Exception("Final handshake not as expected {}".format(response[0][0]))
         else:
@@ -334,7 +345,7 @@ class nobo:
             # 1=Hub serial number mismatch.
             # 2=Wrong number of arguments.
             # 3=Timestamp incorrectly formatted
-            self.logger.error('connection to hub rejected: {}'.format(response[0]))
+            _LOGGER.error('connection to hub rejected: {}'.format(response[0]))
             await self.close()
             raise Exception('connection to hub rejected: {}'.format(response[0]))
 
@@ -346,11 +357,11 @@ class nobo:
         # attempt reconnect to the lost hub
         rediscovered_hub = None
         while not rediscovered_hub:
-            self.logger.debug('hub not rediscovered')
+            _LOGGER.debug('hub not rediscovered')
             rediscovered_hub = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip, loop=self.loop)
             await asyncio.sleep(10)
         await self.connect_hub(self.hub_ip, self.hub_serial)
-        self.logger.info('reconnected to Nobø Hub')
+        _LOGGER.info('reconnected to Nobø Hub')
 
     @staticmethod
     async def discover_hubs(serial="", ip=None, autodiscover_wait=3.0, loop=None):
@@ -408,7 +419,7 @@ class nobo:
         if not self.writer:
             return
 
-        self.logger.debug('sending: %s', commands)
+        _LOGGER.debug('sending: %s', commands)
 
         # Convert integers to string
         for idx, c in enumerate(commands):
@@ -420,7 +431,7 @@ class nobo:
             self.writer.write(message + b'\r')
             await self.writer.drain()
         except ConnectionError as e:
-            self.logger.info('lost connection to hub (%s)', e)
+            _LOGGER.info('lost connection to hub (%s)', e)
             await self.close()
 
     async def get_response(self, bufsize=4096):
@@ -436,7 +447,7 @@ class nobo:
             try:
                 response += await self.reader.read(bufsize)
             except ConnectionError as e:
-                self.logger.info('lost connection to hub (%s)', e)
+                _LOGGER.info('lost connection to hub (%s)', e)
                 await self.close()
                 break
 
@@ -452,20 +463,27 @@ class nobo:
     async def socket_receive(self):
         try:
             while True:
+                do_callback = False
                 responses = await self.get_response()
                 for r in responses:
-                    self.logger.debug('received: %s', r)
+                    _LOGGER.debug('received: %s', r)
                     if r[0] == self.API.HANDSHAKE:
                         pass # Handshake, no action needed
                     elif r[0][0] == 'E':
-                        self.logger.error('error! what did you do? %s', r)
+                        _LOGGER.error('error! what did you do? %s', r)
                         # TODO: Raise something here?
                     else:
                         self.response_handler(r)
+                        do_callback = True
+                # Handle all responses before callback to avoid multiple callbacks if get_response
+                # returns more than one response.
+                if do_callback:
+                    for callback in self.callbacks:
+                        callback(self)
                 # TODO: Reconnect if necessary
         except Exception as e:
             # Ops, now we have real problems
-            self.logger.error("Unhandled exception: %s", e, exc_info=1)
+            _LOGGER.error("Unhandled exception: %s", e, exc_info=1)
             # Just disconnect (in stead of risking an infinite reconnect loop)
             await self.stop()
 
@@ -489,29 +507,29 @@ class nobo:
         elif r[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_ADD_ZONE ,self.API.RESPONSE_UPDATE_ZONE]:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
             self.zones[dicti['zone_id']] = dicti
-            self.logger.info('added/updated zone: %s', dicti['name'])
+            _LOGGER.info('added/updated zone: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_ADD_COMPONENT ,self.API.RESPONSE_UPDATE_COMPONENT]:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
             if dicti['zone_id'] == '-1' and dicti['tempsensor_for_zone_id'] != '-1':
                 dicti['zone_id'] = dicti['tempsensor_for_zone_id']
             self.components[dicti['serial']] = dicti
-            self.logger.info('added/updated component: %s', dicti['name'])
+            _LOGGER.info('added/updated component: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_ADD_WEEK_PROFILE, self.API.RESPONSE_UPDATE_WEEK_PROFILE]:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
             dicti['profile'] = r[-1].split(',')
             self.week_profiles[dicti['week_profile_id']] = dicti
-            self.logger.info('added/updated week profile: %s', dicti['name'])
+            _LOGGER.info('added/updated week profile: %s', dicti['name'])
 
         elif r[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_OVERRIDE]:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             self.overrides[dicti['override_id']] = dicti
-            self.logger.info('added/updated override: id %s', dicti['override_id'])
+            _LOGGER.info('added/updated override: id %s', dicti['override_id'])
 
         elif r[0] in [self.API.RESPONSE_HUB_INFO, self.API.RESPONSE_UPDATE_HUB_INFO]:
             self.hub_info = collections.OrderedDict(zip(self.API.STRUCT_KEYS_HUB, r[1:]))
-            self.logger.info('updated hub info: %s', self.hub_info)
+            _LOGGER.info('updated hub info: %s', self.hub_info)
             if r[0] == self.API.RESPONSE_HUB_INFO:
                 self.received_all_info = True
 
@@ -519,27 +537,27 @@ class nobo:
         elif r[0] == self.API.RESPONSE_REMOVE_ZONE:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, r[1:]))
             self.zones.pop(dicti['zone_id'], None)
-            self.logger.info('removed zone: %s', dicti['name'])
+            _LOGGER.info('removed zone: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_COMPONENT:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, r[1:]))
             self.components.pop(dicti['serial'], None)
-            self.logger.info('removed component: %s', dicti['name'])
+            _LOGGER.info('removed component: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_WEEK_PROFILE:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, r[1:]))
             self.week_profiles.pop(dicti['week_profile_id'], None)
-            self.logger.info('removed week profile: %s', dicti['name'])
+            _LOGGER.info('removed week profile: %s', dicti['name'])
 
         elif r[0] == self.API.RESPONSE_REMOVE_OVERRIDE:
             dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_OVERRIDE, r[1:]))
             self.overrides.pop(dicti['override_id'], None)
-            self.logger.info('removed override: id%s', dicti['override_id'])
+            _LOGGER.info('removed override: id%s', dicti['override_id'])
 
         # Component temperature data
         elif r[0] == self.API.RESPONSE_COMPONENT_TEMP:
             self.temperatures[r[1]] = r[2]
-            self.logger.info('updated temperature from {}: {}'.format(r[1], r[2]))
+            _LOGGER.info('updated temperature from {}: {}'.format(r[1], r[2]))
 
         # Internet settings
         elif r[0] == self.API.RESPONSE_UPDATE_INTERNET_ACCESS:
@@ -547,14 +565,11 @@ class nobo:
             encryption_key = 0
             for i in range(2, 18):
                 encryption_key = (encryption_key << 8) + int(r[i])
-            self.logger.debug('internet enabled: {}, key: {}'.format(internet_access, hex(encryption_key)))
+            _LOGGER.debug('internet enabled: {}, key: {}'.format(internet_access, hex(encryption_key)))
 
         else:
-            self.logger.warning('behavior undefined for this response: {}'.format(r))
+            _LOGGER.warning('behavior undefined for this response: {}'.format(r))
             warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?
-
-        for callback in self.callbacks:
-            callback(self)
 
     async def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         """
@@ -627,7 +642,7 @@ class nobo:
                     status = timestamp[-1]
                 else:
                     break
-        self.logger.debug('Status at {} on weekday {} is {}'.format(target, dt.weekday(), self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]))
+        _LOGGER.debug('Status at {} on weekday {} is {}'.format(target, dt.weekday(), self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]))
         return self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
 
     def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
@@ -658,7 +673,7 @@ class nobo:
         if not current_mode:
             current_mode = self.get_week_profile_status(self.zones[zone_id]['week_profile_id'], now)
 
-        self.logger.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
+        _LOGGER.debug('Current mode for zone {} at {} is {}'.format(self.zones[zone_id]['name'], current_time, current_mode))
         return current_mode
 
     def get_current_component_temperature(self, serial):
@@ -677,7 +692,7 @@ class nobo:
                 current_temperature = None
 
         if current_temperature:
-            self.logger.debug('Current temperature for component {} is {}'.format(self.components[serial]['name'], current_temperature))
+            _LOGGER.debug('Current temperature for component {} is {}'.format(self.components[serial]['name'], current_temperature))
         return current_temperature
 
     # Function to get (first) temperature in a zone
@@ -698,5 +713,5 @@ class nobo:
                     break
 
         if current_temperature:
-            self.logger.debug('Current temperature for zone {} is {}'.format(self.zones[zone_id]['name'], current_temperature))
+            _LOGGER.debug('Current temperature for zone {} is {}'.format(self.zones[zone_id]['name'], current_temperature))
         return current_temperature
