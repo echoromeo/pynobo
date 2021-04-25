@@ -311,26 +311,26 @@ class nobo:
         self._reader, self._writer = await asyncio.wait_for(asyncio.open_connection(ip, 27779), timeout=5)
 
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
-        await self.async_send_command([self.API.START, self.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
+        await self.async_send_command([nobo.API.START, nobo.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
 
         # receive the response data (4096 is recommended buffer size)
         response = await asyncio.wait_for(self.get_response(), timeout=5)
         _LOGGER.debug('first handshake response: %s', response)
 
         # successful response is "HELLO <its version of command set>\r"
-        if response[0] == self.API.START:
+        if response[0] == nobo.API.START:
             # send “REJECT\r” if command set is not supported? No need to abort if Hub is ok with the mismatch?
-            if response[1] != self.API.VERSION:
-                #await self.async_send_command([self.API.REJECT])
+            if response[1] != nobo.API.VERSION:
+                #await self.async_send_command([nobo.API.REJECT])
                 _LOGGER.warning('api version might not match, hub: v%s, pynobo: v%s', response[1], nobo.API.VERSION)
-                warnings.warn(f'api version might not match, hub: v{response[1]}, pynobo: v{self.API.VERSION}') #overkill?
+                warnings.warn(f'api version might not match, hub: v{response[1]}, pynobo: v{nobo.API.VERSION}') #overkill?
 
             # send/receive handshake complete
-            await self.async_send_command([self.API.HANDSHAKE])
+            await self.async_send_command([nobo.API.HANDSHAKE])
             response = await asyncio.wait_for(self.get_response(), timeout=5)
             _LOGGER.debug('second handshake response: %s', response)
 
-            if response[0] == self.API.HANDSHAKE:
+            if response[0] == nobo.API.HANDSHAKE:
                 # Connect OK, store full serial for reconnect
                 self.hub_ip = ip
                 self.hub_serial = serial
@@ -345,7 +345,7 @@ class nobo:
                 _LOGGER.error('Final handshake not as expected %s', response)
                 await self.close()
                 raise Exception(f'Final handshake not as expected {response}')
-        if response[0] == self.API.REJECT:
+        if response[0] == nobo.API.REJECT:
             # This may not be the hub we are looking for
 
             # Reject response: "REJECT <reject code>\r"
@@ -445,7 +445,7 @@ class nobo:
         while True:
             await asyncio.sleep(interval)
             if self._keep_alive:
-                await self.async_send_command([self.API.HANDSHAKE])
+                await self.async_send_command([nobo.API.HANDSHAKE])
 
     def _create_task(self, target):
         self._loop.call_soon_threadsafe(self._async_create_task, target)
@@ -482,7 +482,7 @@ class nobo:
 
     async def _get_initial_data(self):
         self._received_all_info = False
-        await self.async_send_command([self.API.GET_ALL_INFO])
+        await self.async_send_command([nobo.API.GET_ALL_INFO])
         while not self._received_all_info:
             self.response_handler(await self.get_response())
 
@@ -508,7 +508,7 @@ class nobo:
             while True:
                 try:
                     response = await self.get_response()
-                    if response[0] == self.API.HANDSHAKE:
+                    if response[0] == nobo.API.HANDSHAKE:
                         pass # Handshake, no action needed
                     elif response[0] == 'E':
                         _LOGGER.error('error! what did you do? %s', response)
@@ -535,7 +535,7 @@ class nobo:
         """
 
         # All info incoming, clear existing info
-        if response[0] == self.API.RESPONSE_SENDING_ALL_INFO:
+        if response[0] == nobo.API.RESPONSE_SENDING_ALL_INFO:
             self._received_all_info = False
             self.hub_info = {}
             self.zones = {}
@@ -544,63 +544,63 @@ class nobo:
             self.overrides = {}
 
         # The added/updated info messages
-        elif response[0] in [self.API.RESPONSE_ZONE_INFO, self.API.RESPONSE_ADD_ZONE , self.API.RESPONSE_UPDATE_ZONE]:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, response[1:]))
+        elif response[0] in [nobo.API.RESPONSE_ZONE_INFO, nobo.API.RESPONSE_ADD_ZONE , nobo.API.RESPONSE_UPDATE_ZONE]:
+            dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_ZONE, response[1:]))
             self.zones[dicti['zone_id']] = dicti
             _LOGGER.info('added/updated zone: %s', dicti['name'])
 
-        elif response[0] in [self.API.RESPONSE_COMPONENT_INFO, self.API.RESPONSE_ADD_COMPONENT , self.API.RESPONSE_UPDATE_COMPONENT]:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, response[1:]))
+        elif response[0] in [nobo.API.RESPONSE_COMPONENT_INFO, nobo.API.RESPONSE_ADD_COMPONENT , nobo.API.RESPONSE_UPDATE_COMPONENT]:
+            dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_COMPONENT, response[1:]))
             if dicti['zone_id'] == '-1' and dicti['tempsensor_for_zone_id'] != '-1':
                 dicti['zone_id'] = dicti['tempsensor_for_zone_id']
             self.components[dicti['serial']] = dicti
             _LOGGER.info('added/updated component: %s', dicti['name'])
 
-        elif response[0] in [self.API.RESPONSE_WEEK_PROFILE_INFO, self.API.RESPONSE_ADD_WEEK_PROFILE, self.API.RESPONSE_UPDATE_WEEK_PROFILE]:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, response[1:]))
+        elif response[0] in [nobo.API.RESPONSE_WEEK_PROFILE_INFO, nobo.API.RESPONSE_ADD_WEEK_PROFILE, nobo.API.RESPONSE_UPDATE_WEEK_PROFILE]:
+            dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_WEEK_PROFILE, response[1:]))
             dicti['profile'] = response[-1].split(',')
             self.week_profiles[dicti['week_profile_id']] = dicti
             _LOGGER.info('added/updated week profile: %s', dicti['name'])
 
-        elif response[0] in [self.API.RESPONSE_OVERRIDE_INFO, self.API.RESPONSE_ADD_OVERRIDE]:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_OVERRIDE, response[1:]))
+        elif response[0] in [nobo.API.RESPONSE_OVERRIDE_INFO, nobo.API.RESPONSE_ADD_OVERRIDE]:
+            dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_OVERRIDE, response[1:]))
             self.overrides[dicti['override_id']] = dicti
             _LOGGER.info('added/updated override: id %s', dicti['override_id'])
 
-        elif response[0] in [self.API.RESPONSE_HUB_INFO, self.API.RESPONSE_UPDATE_HUB_INFO]:
-            self.hub_info = collections.OrderedDict(zip(self.API.STRUCT_KEYS_HUB, response[1:]))
+        elif response[0] in [nobo.API.RESPONSE_HUB_INFO, nobo.API.RESPONSE_UPDATE_HUB_INFO]:
+            self.hub_info = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_HUB, response[1:]))
             _LOGGER.info('updated hub info: %s', self.hub_info)
-            if response[0] == self.API.RESPONSE_HUB_INFO:
+            if response[0] == nobo.API.RESPONSE_HUB_INFO:
                 self._received_all_info = True
 
         # The removed info messages
-        elif response[0] == self.API.RESPONSE_REMOVE_ZONE:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_ZONE, response[1:]))
+        elif response[0] == nobo.API.RESPONSE_REMOVE_ZONE:
+            dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_ZONE, response[1:]))
             self.zones.pop(dicti['zone_id'], None)
             _LOGGER.info('removed zone: %s', dicti['name'])
 
-        elif response[0] == self.API.RESPONSE_REMOVE_COMPONENT:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_COMPONENT, response[1:]))
+        elif response[0] == nobo.API.RESPONSE_REMOVE_COMPONENT:
+            dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_COMPONENT, response[1:]))
             self.components.pop(dicti['serial'], None)
             _LOGGER.info('removed component: %s', dicti['name'])
 
-        elif response[0] == self.API.RESPONSE_REMOVE_WEEK_PROFILE:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_WEEK_PROFILE, response[1:]))
+        elif response[0] == nobo.API.RESPONSE_REMOVE_WEEK_PROFILE:
+            dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_WEEK_PROFILE, response[1:]))
             self.week_profiles.pop(dicti['week_profile_id'], None)
             _LOGGER.info('removed week profile: %s', dicti['name'])
 
-        elif response[0] == self.API.RESPONSE_REMOVE_OVERRIDE:
-            dicti = collections.OrderedDict(zip(self.API.STRUCT_KEYS_OVERRIDE, response[1:]))
+        elif response[0] == nobo.API.RESPONSE_REMOVE_OVERRIDE:
+            dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_OVERRIDE, response[1:]))
             self.overrides.pop(dicti['override_id'], None)
             _LOGGER.info('removed override: id%s', dicti['override_id'])
 
         # Component temperature data
-        elif response[0] == self.API.RESPONSE_COMPONENT_TEMP:
+        elif response[0] == nobo.API.RESPONSE_COMPONENT_TEMP:
             self.temperatures[response[1]] = response[2]
             _LOGGER.info('updated temperature from %s: %s', response[1], response[2])
 
         # Internet settings
-        elif response[0] == self.API.RESPONSE_UPDATE_INTERNET_ACCESS:
+        elif response[0] == nobo.API.RESPONSE_UPDATE_INTERNET_ACCESS:
             internet_access = response[1]
             encryption_key = 0
             for i in range(2, 18):
@@ -625,7 +625,7 @@ class nobo:
         :param end_time: the end time (default -1)
         :param start_time: the start time (default -1)
         """
-        command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
+        command = [nobo.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         await self.async_send_command(command)
         for o in self.overrides: # Save override before command has finished executing
             if self.overrides[o]['target_id'] == target_id:
@@ -648,7 +648,7 @@ class nobo:
         """
 
         # Initialize command with the current zone settings
-        command = [self.API.UPDATE_ZONE] + list(self.zones[zone_id].values())
+        command = [nobo.API.UPDATE_ZONE] + list(self.zones[zone_id].values())
 
         # Replace command with arguments that are not None. Is there a more elegant way?
         if name:
@@ -689,7 +689,7 @@ class nobo:
                 else:
                     break
         _LOGGER.debug('Status at %s on weekday %s is %s', target, dt.weekday(), nobo.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status])
-        return self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
+        return nobo.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
 
     def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
         """
@@ -708,12 +708,12 @@ class nobo:
             for o in self.overrides:
                 if self.overrides[o]['mode'] == '0':
                     continue # "normal" overrides
-                elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_ZONE:
+                elif self.overrides[o]['target_type'] == nobo.API.OVERRIDE_TARGET_ZONE:
                     if self.overrides[o]['target_id'] == zone_id:
-                        current_mode = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+                        current_mode = nobo.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
                         break
-                elif self.overrides[o]['target_type'] == self.API.OVERRIDE_TARGET_GLOBAL:
-                    current_mode = self.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+                elif self.overrides[o]['target_type'] == nobo.API.OVERRIDE_TARGET_GLOBAL:
+                    current_mode = nobo.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
 
         # no override - find mode from week profile
         if not current_mode:
