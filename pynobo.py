@@ -11,6 +11,7 @@ import warnings
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class nobo:
     """This is where all the Nobø Hub magic happens!"""
 
@@ -162,7 +163,7 @@ class nobo:
 
         def datagram_received(self, data: bytes, addr):
             msg = data.decode('utf-8')
-            _LOGGER.info('broadcast received: %s', msg)
+            _LOGGER.info('broadcast received: %s from %s', msg, addr[0])
             # Expected string “__NOBOHUB__123123123”, where 123123123 is replaced with the first 9 digits of the Hub’s serial number.
             if msg.startswith('__NOBOHUB__'):
                 discover_serial = msg[11:]
@@ -307,7 +308,7 @@ class nobo:
         :param serial: The complete 12 digit serial number of the hub to connect to
         """
 
-        self._reader, self._writer = await asyncio.open_connection(ip, 27779)
+        self._reader, self._writer = await asyncio.wait_for(asyncio.open_connection(ip, 27779), timeout=5)
 
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
         await self.async_send_command([self.API.START, self.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
@@ -321,7 +322,7 @@ class nobo:
             # send “REJECT\r” if command set is not supported? No need to abort if Hub is ok with the mismatch?
             if response[1] != self.API.VERSION:
                 #await self.async_send_command([self.API.REJECT])
-                _LOGGER.warning(f'api version might not match, hub: v{response[1]}, pynobo: v{self.API.VERSION}')
+                _LOGGER.warning('api version might not match, hub: v%s, pynobo: v%s', response[1], nobo.API.VERSION)
                 warnings.warn(f'api version might not match, hub: v{response[1]}, pynobo: v{self.API.VERSION}') #overkill?
 
             # send/receive handshake complete
@@ -352,24 +353,40 @@ class nobo:
             # 1=Hub serial number mismatch.
             # 2=Wrong number of arguments.
             # 3=Timestamp incorrectly formatted
-            _LOGGER.warning(f'connection to hub rejected: {response}')
+            _LOGGER.warning('connection to hub rejected: %s', response)
             await self.close()
             return False
 
         # Unexpected response
-        _LOGGER.error(f'connection to hub rejected: {response}')
+        _LOGGER.error('connection to hub rejected: %s', response)
         raise Exception(f'connection to hub rejected: {response}')
 
     async def reconnect_hub(self):
         """Attempt to reconnect to the hub."""
 
+        _LOGGER.info('reconnecting to hub')
         # Pause keep alive during reconnect
         self._keep_alive = False
-        # Reconnect using complete serial, but allow ip to change unless originally provided
         # TODO: set timeout?
-        rediscovered_hub = await self.async_discover_hubs(ip=self.ip, serial=self.hub_serial, loop=self._loop, rediscover=True)
-        (ip, serial) = rediscovered_hub.pop()
-        await self.async_connect_hub(ip, serial)
+        if self.discover:
+            # Reconnect using complete serial, but allow ip to change unless originally provided
+            rediscovered_hub = await self.async_discover_hubs(ip=self.ip, serial=self.hub_serial, loop=self._loop, rediscover=True)
+            (ip, serial) = rediscovered_hub.pop()
+            await self.async_connect_hub(ip, serial)
+        else:
+            connected = False
+            while not connected:
+                _LOGGER.debug('Discovery disabled - waiting 10 seconds before trying to reconnect.')
+                await asyncio.sleep(10)
+                with suppress(asyncio.TimeoutError):
+                    try:
+                        connected = await self.async_connect_hub(self.ip, self.serial)
+                    except OSError as e:
+                        if e.errno == 65:
+                            _LOGGER.debug('Ignoring %s', e)
+                        else:
+                            raise e
+
         self._keep_alive = True
         _LOGGER.info('reconnected to Nobø Hub')
 
@@ -494,7 +511,7 @@ class nobo:
                     if response[0] == self.API.HANDSHAKE:
                         pass # Handshake, no action needed
                     elif response[0] == 'E':
-                        _LOGGER.error(f'error! what did you do? {response}')
+                        _LOGGER.error('error! what did you do? %s', response)
                         # TODO: Raise something here?
                     else:
                         self.response_handler(response)
@@ -580,7 +597,7 @@ class nobo:
         # Component temperature data
         elif response[0] == self.API.RESPONSE_COMPONENT_TEMP:
             self.temperatures[response[1]] = response[2]
-            _LOGGER.info(f'updated temperature from {response[1]}: {response[2]}')
+            _LOGGER.info('updated temperature from %s: %s', response[1], response[2])
 
         # Internet settings
         elif response[0] == self.API.RESPONSE_UPDATE_INTERNET_ACCESS:
@@ -588,10 +605,10 @@ class nobo:
             encryption_key = 0
             for i in range(2, 18):
                 encryption_key = (encryption_key << 8) + int(response[i])
-            _LOGGER.info(f'internet enabled: {internet_access}, key: {hex(encryption_key)}')
+            _LOGGER.info('internet enabled: %s, key: %s', internet_access, hex(encryption_key))
 
         else:
-            _LOGGER.warning(f'behavior undefined for this response: {response}')
+            _LOGGER.warning('behavior undefined for this response: %s', response)
             warnings.warn(f'behavior undefined for this response: {response}') #overkill?
 
     def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
@@ -671,7 +688,7 @@ class nobo:
                     status = timestamp[-1]
                 else:
                     break
-        _LOGGER.debug(f'Status at {target} on weekday {dt.weekday()} is {self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]}')
+        _LOGGER.debug('Status at %s on weekday %s is %s', target, dt.weekday(), nobo.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status])
         return self.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
 
     def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
@@ -679,7 +696,7 @@ class nobo:
         Get the mode of a zone at a certain time. If the zone is overridden only now is possible.
 
         :param zone_id: the zone id in question
-        :param dt: datetime for the status in question (default datetime.datetime.today())
+        :param now: datetime for the status in question (default datetime.datetime.today())
 
         :return: the mode for the zone
         """
@@ -702,7 +719,7 @@ class nobo:
         if not current_mode:
             current_mode = self.get_week_profile_status(self.zones[zone_id]['week_profile_id'], now)
 
-        _LOGGER.debug(f'Current mode for zone {self.zones[zone_id]["name"]} at {current_time} is {current_mode}')
+        _LOGGER.debug('Current mode for zone %s at %s is %s', self.zones[zone_id]['name'], current_time, current_mode)
         return current_mode
 
     def get_current_component_temperature(self, serial):
@@ -721,7 +738,7 @@ class nobo:
                 current_temperature = None
 
         if current_temperature:
-            _LOGGER.debug(f'Current temperature for component {self.components[serial]["name"]} is {current_temperature}')
+            _LOGGER.debug('Current temperature for component %s is %s', self.components[serial]['name'], current_temperature)
         return current_temperature
 
     # Function to get (first) temperature in a zone
@@ -742,5 +759,5 @@ class nobo:
                     break
 
         if current_temperature:
-            _LOGGER.debug(f'Current temperature for zone {self.zones[zone_id]["name"]} is {current_temperature}')
+            _LOGGER.debug('Current temperature for zone %s is %s', self.zones[zone_id]['name'], current_temperature)
         return current_temperature
