@@ -1,12 +1,13 @@
 #!/usr/bin/python3
 
-import time
-import datetime
-import warnings
-import logging
-import collections
 import asyncio
+import collections
 from contextlib import suppress
+import datetime
+import logging
+import time
+import threading
+import warnings
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -190,7 +191,7 @@ class nobo:
         :param loop: the asyncio event loop to use
         """
 
-        self.loop = asyncio.get_event_loop() if loop is None else loop
+        self._loop = asyncio.get_event_loop() if loop is None else loop
         self.serial = serial
         self.ip = ip
         self.discover = discover
@@ -206,6 +207,14 @@ class nobo:
         self.week_profiles = collections.OrderedDict()
         self.overrides = collections.OrderedDict()
         self.temperatures = collections.OrderedDict()
+
+        # Start asyncio in a separate thread unless an event loop was provided.
+        if loop is None:
+            self._loop.run_until_complete(self.start())
+            self._thread = threading.Thread(target=lambda: self._loop.run_forever())
+            self._thread.start()
+        else:
+            self._thread = None
 
     def register_callback(self, callback=lambda *args, **kwargs: None):
         """
@@ -232,14 +241,14 @@ class nobo:
             # Get a socket connection, either by scanning or directly
             if self.discover:
                 _LOGGER.info("Looking for Nobø Ecohub serial: %s, ip: %s", self.serial, self.ip)
-                discovered_hubs = await self.discover_hubs(serial=self.serial, ip=self.ip, loop=self.loop)
+                discovered_hubs = await self.async_discover_hubs(serial=self.serial, ip=self.ip, loop=self._loop)
                 if not discovered_hubs:
                     _LOGGER.error("Failed to discover any Nobø Ecohubs")
                     raise Exception("Failed to discover any Nobø Ecohubs")
                 while discovered_hubs:
                     (discover_ip, discover_serial) = discovered_hubs.pop()
                     try:
-                        await self.connect_hub(discover_ip, discover_serial)
+                        await self.async_connect_hub(discover_ip, discover_serial)
                         break  # We connect to the first valid hub, no reason to try the rest
                     except Exception as e:
                         # This might not have been the Ecohub we wanted (wrong serial)
@@ -256,15 +265,15 @@ class nobo:
                     _LOGGER.error('Could not connect, no valid serial number provided')
                     raise ValueError('Could not connect, no valid serial number provided')
 
-                await self.connect_hub(self.ip, self.serial)
+                await self.async_connect_hub(self.ip, self.serial)
 
             if not self.writer:
                 _LOGGER.error("Failed to connect to Ecohub")
                 raise Exception("Failed to connect to Ecohub")
 
         # Start the tasks to send keep-alive and receive data
-        self.keep_alive_task = self.loop.create_task(self.keep_alive())
-        self.socket_receive_task = self.loop.create_task(self.socket_receive())
+        self.keep_alive_task = self._loop.create_task(self.keep_alive())
+        self.socket_receive_task = self._loop.create_task(self.socket_receive())
 
         _LOGGER.info('connected to Nobø Ecohub')
 
@@ -286,7 +295,10 @@ class nobo:
             await self.writer.wait_closed()
             self.writer = None
 
-    async def connect_hub(self, ip, serial):
+    def connect_hub(self, ip, serial):
+        return self._loop.run_until_complete(self.async_connect_hub(ip, serial))
+
+    async def async_connect_hub(self, ip, serial):
         """
         Attempt initial connection and handshake.
 
@@ -297,7 +309,7 @@ class nobo:
         self.reader, self.writer = await asyncio.open_connection(ip, 27779)
 
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
-        await self.send_command([self.API.START, self.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
+        await self.async_send_command([self.API.START, self.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
 
         # receive the response data (4096 is recommended buffer size)
         response = await asyncio.wait_for(self.get_response(), timeout=5)
@@ -307,12 +319,12 @@ class nobo:
         if response[0][0] == self.API.START:
             # send “REJECT\r” if command set is not supported? No need to abort if Hub is ok with the mismatch?
             if response[0][1] != self.API.VERSION:
-                #await self.send_command([self.API.REJECT])
+                #await self.async_send_command([self.API.REJECT])
                 _LOGGER.warning('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION))
                 warnings.warn('api version might not match, hub: v{}, pynobo: v{}'.format(response[0][1], self.API.VERSION)) #overkill?
 
             # send/receive handshake complete
-            await self.send_command([self.API.HANDSHAKE])
+            await self.async_send_command([self.API.HANDSHAKE])
             response = await asyncio.wait_for(self.get_response(), timeout=5)
             _LOGGER.debug('second handshake response: %s', response)
 
@@ -325,7 +337,7 @@ class nobo:
                 # TODO: Move to separate method
                 # TODO: Add timeout for getting initial data
                 self.received_all_info = False
-                await self.send_command([self.API.GET_ALL_INFO])
+                await self.async_send_command([self.API.GET_ALL_INFO])
                 while not self.received_all_info:
                     responses = await self.get_response()
                     for r in responses:
@@ -349,7 +361,10 @@ class nobo:
             await self.close()
             raise Exception('connection to hub rejected: {}'.format(response[0]))
 
-    async def reconnect_hub(self):
+    def reconnect_hub(self, ip, serial):
+        self._loop.run_until_complete(self.async_reconnect_hub())
+
+    async def async_reconnect_hub(self):
         """Attempt to disconnect/close the connection and reconnect"""
         # close socket properly so connect_hub can restart properly
         await self.close()
@@ -358,13 +373,18 @@ class nobo:
         rediscovered_hub = None
         while not rediscovered_hub:
             _LOGGER.debug('hub not rediscovered')
-            rediscovered_hub = self.discover_hubs(serial=self.hub_serial, ip=self.hub_ip, loop=self.loop)
+            rediscovered_hub = self.async_discover_hubs(serial=self.hub_serial, ip=self.hub_ip, loop=self._loop)
             await asyncio.sleep(10)
-        await self.connect_hub(self.hub_ip, self.hub_serial)
+        await self.async_connect_hub(self.hub_ip, self.hub_serial)
         _LOGGER.info('reconnected to Nobø Hub')
 
     @staticmethod
-    async def discover_hubs(serial="", ip=None, autodiscover_wait=3.0, loop=None):
+    def discover_hubs(serial="", ip=None, autodiscover_wait=3.0, loop=None):
+        loop = asyncio.get_event_loop() if loop is None else loop
+        return loop.run_until_complete(nobo.async_discover_hubs(serial, ip, autodiscover_wait, loop))
+
+    @staticmethod
+    async def async_discover_hubs(serial="", ip=None, autodiscover_wait=3.0, loop=None):
         """
         Attempt to autodiscover Nobø Ecohubs on the local network.
 
@@ -408,9 +428,13 @@ class nobo:
         """
         while True:
             await asyncio.sleep(interval)
-            await self.send_command([self.API.HANDSHAKE])
+            _LOGGER.debug("handshake")
+            await self.async_send_command([self.API.HANDSHAKE])
 
-    async def send_command(self, commands):
+    def send_command(self, commands):
+        self._loop.create_task(self.async_send_command(commands))
+
+    async def async_send_command(self, commands):
         """
         Send a list of command string(s) to the hub.
 
@@ -571,7 +595,10 @@ class nobo:
             _LOGGER.warning('behavior undefined for this response: {}'.format(r))
             warnings.warn('behavior undefined for this response: {}'.format(r)) #overkill?
 
-    async def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
+    def create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
+        self._loop.create_task(self.async_create_override(mode, type, target_type, target_id, end_time, start_time))
+
+    async def async_create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         """
         Override hub/zones/components. Use OVERRIDE_MODE_NOMAL to disable an existing override.
 
@@ -583,13 +610,16 @@ class nobo:
         :param start_time: the start time (default -1)
         """
         command = [self.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
-        await self.send_command(command)
+        await self.async_send_command(command)
         for o in self.overrides: # Save override before command has finished executing
             if self.overrides[o]['target_id'] == target_id:
                 self.overrides[o]['mode'] = mode
                 self.overrides[o]['type'] = type
 
-    async def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
+    def update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
+        self._loop.create_task(self.async_update_zone(zone_id, name, week_profile_id, temp_comfort_c, temp_eco_c, override_allowed))
+
+    async def async_update_zone(self, zone_id, name=None, week_profile_id=None, temp_comfort_c=None, temp_eco_c=None, override_allowed=None):
         """
         Update the name, week profile, temperature or override allowing for a zone.
 
@@ -618,7 +648,7 @@ class nobo:
         if override_allowed:
             command[6] = override_allowed
 
-        await self.send_command(command)
+        await self.async_send_command(command)
 
     def get_week_profile_status(self, week_profile_id, dt=datetime.datetime.today()):
         """
