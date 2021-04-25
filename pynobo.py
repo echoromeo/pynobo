@@ -4,6 +4,7 @@ import asyncio
 import collections
 from contextlib import suppress
 import datetime
+import errno
 import logging
 import time
 import threading
@@ -11,6 +12,7 @@ import warnings
 
 _LOGGER = logging.getLogger(__name__)
 
+NETWORK_ERRORS = [errno.ECONNRESET, errno.ECONNREFUSED, errno.EHOSTUNREACH, errno.EHOSTDOWN, errno.ENETDOWN, errno.ENETUNREACH]
 
 class nobo:
     """This is where all the Nobø Hub magic happens!"""
@@ -382,7 +384,7 @@ class nobo:
                     try:
                         connected = await self.async_connect_hub(self.ip, self.serial)
                     except OSError as e:
-                        if e.errno == 65:
+                        if e.errno in NETWORK_ERRORS:
                             _LOGGER.debug('Ignoring %s', e)
                         else:
                             raise e
@@ -517,8 +519,15 @@ class nobo:
                         self.response_handler(response)
                         for callback in self._callbacks:
                             callback(self)
-                except (ConnectionError, asyncio.IncompleteReadError) as e:
+                except (asyncio.IncompleteReadError) as e:
+                    _LOGGER.info('Reconnecting due to %s', e)
                     await self.reconnect_hub()
+                except (OSError) as e:
+                    if e.errno in NETWORK_ERRORS:
+                        _LOGGER.info('Reconnecting due to %s', e)
+                        await self.reconnect_hub()
+                    else:
+                        raise e
         except asyncio.CancelledError:
             _LOGGER.debug('socket_receive stopped')
         except Exception as e:
