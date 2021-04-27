@@ -49,6 +49,24 @@ This system/service/software is not officially supported or endorsed by Glen Dim
 * `nobo.API` class - All the commands and responses from API v1.1, Some with sensible names, others not yet given better names.
 * `nobo.DiscoveryProtocol` - An `asyncio.DatagramProtocol` used to discover Nobø Ecohubs on the local network.
 
+### Discover and test connection
+
+It is possible to discover hubs on the local network, and also test connectivity, before starting the background tasks.
+
+    # Discover all hubs on local network
+    hubs = await nobo.async_discover_hubs()
+
+    # Test connection to the first
+    (serial, ip) = hubs.pop()
+    hub = nobo(serial + '123', ip, False, loop=asyncio.get_event_loop())
+    await hub.async_connect_hub(ip=test_ip, serial=self.serial)
+
+    # Then start the background tasks
+    await hub.start()
+
+    # Or just close the connection right away
+    await hub.close()
+
 ### Background Tasks
 
 Calling `start()` will first try to discover the Nobø Ecohub on the local network, unless `discover` is set to `False`,
@@ -77,3 +95,41 @@ not perform any I/O, and can safely be called from the event loop.
 * get_current_zone_mode - Get the mode of a zone at a certain time
 * get_current_component_temperature - Get the current temperature from a component
 * get_current_zone_temperature - Get the current temperature from (the first component in) a zone
+
+## Backwards compatability
+
+Synchronous wrapper methods are available for backwards compatibility, but it is recommended to
+switch to the async methods. If `loop` is not provided, initializing will start the async event
+loop in a daemon thread, discover and connect to hub before returning as in version 1.1.
+
+    import time
+    from pynobo import nobo
+    
+    def main():
+        # Either call using the three last digits in the hub serial
+        hub = nobo('123')
+        # or full serial and IP if you do not want to discover on UDP:
+        hub = nobo('123123123123', '10.0.0.128', False)
+        
+        # Inspect what you get
+        def update(hub):
+            print(hub.hub_info)
+            print(hub.zones)
+            print(hub.components)
+            print(hub.week_profiles)
+            print(hub.overrides)
+            print(hub.temperatures)
+    
+        # Listen for data updates - register before getting initial data to avoid race condition
+        hub.register_callback(callback=update)
+    
+        # Get initial data
+        update(hub)
+    
+        # Hang around and wait for data updates
+        time.sleep(60)
+    
+        # Stop the connection
+        time.sleep(1)
+    
+    main()

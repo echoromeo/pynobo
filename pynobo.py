@@ -12,7 +12,15 @@ import warnings
 
 _LOGGER = logging.getLogger(__name__)
 
-NETWORK_ERRORS = [errno.ECONNRESET, errno.ECONNREFUSED, errno.EHOSTUNREACH, errno.EHOSTDOWN, errno.ENETDOWN, errno.ENETUNREACH]
+# In case any of these errors occurs after successful initial connection, we will try to reconnect.
+RECONNECT_ERRORS = [
+    errno.ECONNRESET,   # Connection reset by peer - happens all the time
+    errno.ECONNREFUSED, # Not experienced, but likable to happen in case a reboot of the hub
+    errno.EHOSTUNREACH, # May happen if hub is temporarily down
+    errno.EHOSTDOWN,    # May happen if hub is temporarily down
+    errno.ENETDOWN,     # May happen if local network is down
+    errno.ENETUNREACH,  # May happen if hub or local network is temporarily down
+]
 
 class nobo:
     """This is where all the Nobø Hub magic happens!"""
@@ -217,6 +225,7 @@ class nobo:
         if loop is None:
             self._loop.run_until_complete(self.start())
             self._thread = threading.Thread(target=lambda: self._loop.run_forever())
+            self._thread.setDaemon(True)
             self._thread.start()
         else:
             self._thread = None
@@ -242,35 +251,36 @@ class nobo:
     async def start(self):
         """Discover Ecohub and start the TCP client."""
 
-        # Get a socket connection, either by scanning or directly
-        connected = False
-        if self.discover:
-            _LOGGER.info('Looking for Nobø Ecohub with serial: %s and ip: %s', self.serial, self.ip)
-            discovered_hubs = await self.async_discover_hubs(serial=self.serial, ip=self.ip, loop=self._loop)
-            if not discovered_hubs:
-                _LOGGER.error('Failed to discover any Nobø Ecohubs')
-                raise Exception('Failed to discover any Nobø Ecohubs')
-            while discovered_hubs:
-                (discover_ip, discover_serial) = discovered_hubs.pop()
-                connected = await self.async_connect_hub(discover_ip, discover_serial)
-                if connected:
-                    break  # We connect to the first valid hub, no reason to try the rest
-        else:
-            # check if we have an IP
-            if not self.ip:
-                _LOGGER.error('Could not connect, no ip address provided')
-                raise ValueError('Could not connect, no ip address provided')
+        if not self._writer:
+            # Get a socket connection, either by scanning or directly
+            connected = False
+            if self.discover:
+                _LOGGER.info('Looking for Nobø Ecohub with serial: %s and ip: %s', self.serial, self.ip)
+                discovered_hubs = await self.async_discover_hubs(serial=self.serial, ip=self.ip, loop=self._loop)
+                if not discovered_hubs:
+                    _LOGGER.error('Failed to discover any Nobø Ecohubs')
+                    raise Exception('Failed to discover any Nobø Ecohubs')
+                while discovered_hubs:
+                    (discover_ip, discover_serial) = discovered_hubs.pop()
+                    connected = await self.async_connect_hub(discover_ip, discover_serial)
+                    if connected:
+                        break  # We connect to the first valid hub, no reason to try the rest
+            else:
+                # check if we have an IP
+                if not self.ip:
+                    _LOGGER.error('Could not connect, no ip address provided')
+                    raise ValueError('Could not connect, no ip address provided')
 
-            # check if we have a valid serial before we start connection
-            if len(self.serial) != 12:
-                _LOGGER.error('Could not connect, no valid serial number provided')
-                raise ValueError('Could not connect, no valid serial number provided')
+                # check if we have a valid serial before we start connection
+                if len(self.serial) != 12:
+                    _LOGGER.error('Could not connect, no valid serial number provided')
+                    raise ValueError('Could not connect, no valid serial number provided')
 
-            connected = await self.async_connect_hub(self.ip, self.serial)
+                connected = await self.async_connect_hub(self.ip, self.serial)
 
-        if not connected:
-            _LOGGER.error('Could not connect to Nobø Ecohub')
-            raise Exception(f'Failed to connect to Nobø Ecohub with serial: {self.serial} and ip: {self.ip}')
+            if not connected:
+                _LOGGER.error('Could not connect to Nobø Ecohub')
+                raise Exception(f'Failed to connect to Nobø Ecohub with serial: {self.serial} and ip: {self.ip}')
 
         # Start the tasks to send keep-alive and receive data
         self._keep_alive_task = self._loop.create_task(self.keep_alive())
@@ -384,7 +394,7 @@ class nobo:
                     try:
                         connected = await self.async_connect_hub(self.ip, self.serial)
                     except OSError as e:
-                        if e.errno in NETWORK_ERRORS:
+                        if e.errno in RECONNECT_ERRORS:
                             _LOGGER.debug('Ignoring %s', e)
                         else:
                             raise e
@@ -523,7 +533,7 @@ class nobo:
                     _LOGGER.info('Reconnecting due to %s', e)
                     await self.reconnect_hub()
                 except (OSError) as e:
-                    if e.errno in NETWORK_ERRORS:
+                    if e.errno in RECONNECT_ERRORS:
                         _LOGGER.info('Reconnecting due to %s', e)
                         await self.reconnect_hub()
                     else:
