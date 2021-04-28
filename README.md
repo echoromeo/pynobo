@@ -129,7 +129,4 @@ loop in a daemon thread, discover and connect to hub before returning as in vers
         # Hang around and wait for data updates
         time.sleep(60)
     
-        # Stop the connection
-        time.sleep(1)
-    
     main()

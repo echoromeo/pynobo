@@ -14,12 +14,13 @@ _LOGGER = logging.getLogger(__name__)
 
 # In case any of these errors occurs after successful initial connection, we will try to reconnect.
 RECONNECT_ERRORS = [
-    errno.ECONNRESET,   # Connection reset by peer - happens all the time
+    errno.ECONNRESET,   # Happens after 24 hours
     errno.ECONNREFUSED, # Not experienced, but likable to happen in case a reboot of the hub
-    errno.EHOSTUNREACH, # May happen if hub is temporarily down
+    errno.EHOSTUNREACH, # May happen if hub or network switch is temporarily down
     errno.EHOSTDOWN,    # May happen if hub is temporarily down
-    errno.ENETDOWN,     # May happen if local network is down
+    errno.ENETDOWN,     # May happen if local network is temporarily down
     errno.ENETUNREACH,  # May happen if hub or local network is temporarily down
+    errno.ETIMEDOUT,    # Happens if hub has not responded to handshake in 60 seconds, e.g. due to network issue
 ]
 
 class nobo:
@@ -382,9 +383,23 @@ class nobo:
         # TODO: set timeout?
         if self.discover:
             # Reconnect using complete serial, but allow ip to change unless originally provided
-            rediscovered_hub = await self.async_discover_hubs(ip=self.ip, serial=self.hub_serial, loop=self._loop, rediscover=True)
-            (ip, serial) = rediscovered_hub.pop()
-            await self.async_connect_hub(ip, serial)
+            discovered_hubs = await self.async_discover_hubs(ip=self.ip, serial=self.hub_serial, loop=self._loop, rediscover=True)
+            while discovered_hubs:
+                (discover_ip, discover_serial) = discovered_hubs.pop()
+                try:
+                    connected = await self.async_connect_hub(discover_ip, discover_serial)
+                    if connected:
+                        break
+                except OSError as e:
+                    # We know we should be able to connect, because we just discovered the IP address. However, if
+                    # the connection was lost due to network problems on our host, we must wait until we have a local
+                    # IP address. E.g. discovery may find Nobø Ecohub before DHCP address is assigned.
+                    if e.errno in RECONNECT_ERRORS:
+                        _LOGGER.warning("Failed to connect to ip %s: %s", discover_ip, e)
+                        discovered_hubs.add( (discover_ip, discover_serial) )
+                        await asyncio.sleep(1)
+                    else:
+                        raise e
         else:
             connected = False
             while not connected:
