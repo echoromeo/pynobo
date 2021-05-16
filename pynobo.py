@@ -7,6 +7,7 @@ import logging
 import time
 import threading
 import warnings
+from typing import Union
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ class nobo:
         EXECUTE_COMPONENT_PAIR = 'X03'
         RESPONSE_STARTED_SEARCH = 'Y00'
         RESPONSE_STOPPED_SEARCH = 'Y01'
-        RESPONSE_COMPONENT_TEMP = 'Y02'     # Component temperature value sent as part ora GOO response, or pushed from the Hub a utomaticall y to all connected clients whenever the Hub has received updated temperature data.
+        RESPONSE_COMPONENT_TEMP = 'Y02'     # Component temperature value sent as part of a GOO response, or pushed from the Hub automatically to all connected clients whenever the Hub has received updated temperature data.
         RESPONSE_COMPONENT_PAIR = 'Y03'
         RESPONSE_COMPONENT_FOUND = 'Y04'
 
@@ -154,6 +155,92 @@ class nobo:
         DICT_WEEK_PROFILE_STATUS_TO_NAME = {WEEK_PROFILE_STATE_ECO : NAME_ECO, WEEK_PROFILE_STATE_COMFORT : NAME_COMFORT, WEEK_PROFILE_STATE_AWAY : NAME_AWAY, WEEK_PROFILE_STATE_OFF : NAME_OFF}
         DICT_NAME_TO_OVERRIDE_MODE = {NAME_NORMAL : OVERRIDE_MODE_NORMAL, NAME_COMFORT : OVERRIDE_MODE_COMFORT, NAME_ECO : OVERRIDE_MODE_ECO, NAME_AWAY : OVERRIDE_MODE_AWAY}
         DICT_NAME_TO_WEEK_PROFILE_STATUS = {NAME_ECO : WEEK_PROFILE_STATE_ECO, NAME_COMFORT : WEEK_PROFILE_STATE_COMFORT, NAME_AWAY : WEEK_PROFILE_STATE_AWAY, NAME_OFF : WEEK_PROFILE_STATE_OFF}
+
+    class Model:
+        """
+        A device model that supports Nobø Ecohub.
+
+        Lists of devices:
+        https://help.nobo.no/en/user-manual/before-you-start/what-is-a-receiver/list-of-receivers/
+        https://help.nobo.no/en/user-manual/before-you-start/what-is-a-transmitter/list-of-transmitters/
+        """
+
+        THERMOSTAT = "thermostat"
+        SWITCH = "switch"
+        CONTROL_PANEL = "control_panel"
+        UNKNOWN = "unkown"
+
+        def __init__(
+                self,
+                model_id: str,
+                type: Union[THERMOSTAT, SWITCH, CONTROL_PANEL, UNKNOWN],
+                name: str,
+                set_comfort: bool=True,
+                set_eco: bool=True,
+                has_temp_sensor: bool=False
+        ):
+            self._model_id = model_id
+            self._type = type
+            self._name = name
+            self._set_comfort = set_comfort
+            self._set_eco = set_eco
+            self._has_temp_sensor = has_temp_sensor
+
+        @property
+        def model_id(self) -> str:
+            """Model id of the component (first 3 digits of the serial number)."""
+            return self._model_id
+
+        @property
+        def name(self) -> str:
+            """Model name."""
+            return self._name
+
+        @property
+        def type(self) -> Union[THERMOSTAT, SWITCH, CONTROL_PANEL, UNKNOWN]:
+            """Model type."""
+            return self._type
+
+        @property
+        def set_comfort(self) -> bool:
+            """Return True if comfort temperature can be set on hub."""
+            return self._set_comfort
+
+        @property
+        def set_eco(self) -> bool:
+            """Return True if eco temperature can be set on hub."""
+            return self._set_eco
+
+        @property
+        def has_temp_sensor(self) -> bool:
+            """Return True if component has a temperature sensor."""
+            return self._has_temp_sensor
+
+    MODELS = {
+        "120": Model("129", Model.SWITCH, "RS 700", False, False),
+        "160": Model("160", Model.THERMOSTAT, "R80 RDC 700", False, False),
+        "168": Model("168", Model.THERMOSTAT, "NCU-2R"),
+        "182": Model("182", Model.THERMOSTAT, "R80 RSC 700", False),
+        "184": Model("184", Model.THERMOSTAT, "NCU-1R", False),
+        "192": Model("192", Model.THERMOSTAT, "TXF"),
+        "198": Model("198", Model.THERMOSTAT, "NCU-ER"),
+        "200": Model("200", Model.THERMOSTAT, "TRB 36 700", False, False),
+        "210": Model("210", Model.THERMOSTAT, "NTB-2R"),
+        "234": Model("234", Model.CONTROL_PANEL, "SW4", False, False, True),
+    }
+    # Unknown serial prefix for this models:
+    # Model("", Model.THERMOSTAT, "DCU-1R", False)
+    # Model("", Model.THERMOSTAT, "DCU-2R")
+    # Model("", Model.THERMOSTAT, "DCU-ER")
+    # Model("", Model.THERMOSTAT, "R80 RXC 700")
+    # Model("", Model.THERMOSTAT, "R80 TXF 700") # Requires temperature sensor (SW4) in zone
+    # Model("", Model.THERMOSTAT, "2NC9 700", False)
+    # Model("", Model.THERMOSTAT, "TXB 700", False, False)
+    # Model("", Model.THERMOSTAT, "TR36", False)
+    # Model("", Model.THERMOSTAT, "TCU700", False, False)
+    # Model("", Model.THERMOSTAT, "Safir") # Requires temperature sensor (SW4) in zone
+    # Model("", Model.SWITCH, "RSX 700", False, False)
+    # Model("", Model.SWITCH, "RCE 700", False, False)
 
     class DiscoveryProtocol(asyncio.DatagramProtocol):
         """Protocol to discover Nobø Echohub on local network."""
@@ -585,6 +672,16 @@ class nobo:
             dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_COMPONENT, response[1:]))
             if dicti['zone_id'] == '-1' and dicti['tempsensor_for_zone_id'] != '-1':
                 dicti['zone_id'] = dicti['tempsensor_for_zone_id']
+            serial = dicti['serial']
+            model_id = serial[:3]
+            if model_id in nobo.MODELS:
+                dicti['model'] = nobo.MODELS[model_id]
+            else:
+                dicti['model'] = nobo.Model(
+                    model_id,
+                    "Unknown",
+                    f'Unknown (serial number: {serial[:3]} {serial[3:6]} {serial[6:9]} {serial[9:]})'
+                )
             self.components[dicti['serial']] = dicti
             _LOGGER.info('added/updated component: %s', dicti['name'])
 
