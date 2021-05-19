@@ -28,8 +28,6 @@ setup(
     # For a discussion on single-sourcing the version across setup.py and the
     # project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
-    #
-    # pynobo: API version + serial release + alpha/beta/rc 
     version='1.2.0',
     description='Nobø Hub / Nobø Energy Control TCP/IP Interface',
 
@@ -52,8 +50,8 @@ setup(
 
     # This should be your name or the name of the organization which owns the
     # project.
-    author='echoromeo, capelevy',
-    author_email='felis.lynx@gmail.com',  # Optional
+    author='echoromeo, capelevy, oyvindwe',
+#    author_email='project@email.com',  # Optional
 
     # Classifiers help users find your project by categorizing it.
     #
@@ -63,7 +61,7 @@ setup(
         #   3 - Alpha
         #   4 - Beta
         #   5 - Production/Stable
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 5 - Production/Stable',
 
         # Indicate who your project is intended for
         'Intended Audience :: Developers',
@@ -108,7 +106,7 @@ setup(
     #
     # For an analysis of "install_requires" vs pip's requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-#    install_requires=[ 'time', 'datetime', 'warnings', 'logging', 'collections', 'socket', 'threading'], # All are there by default?
+#    install_requires=['asyncio', 'collections', 'contextlib', 'datetime', 'errno', 'logging', 'time', 'threading', 'warnings'], # All are there by default?
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). Users will be able to install these using the "extras"

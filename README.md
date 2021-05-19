@@ -96,11 +96,11 @@ not perform any I/O, and can safely be called from the event loop.
 * get_current_component_temperature - Get the current temperature from a component
 * get_current_zone_temperature - Get the current temperature from (the first component in) a zone
 
-## Backwards compatability
+## Backwards compatibility
 
-Synchronous wrapper methods are available for backwards compatibility, but it is recommended to
+Synchronous wrapper methods are available for compatibility with v1.1.2, but it is recommended to
 switch to the async methods. If `loop` is not provided, initializing will start the async event
-loop in a daemon thread, discover and connect to hub before returning as in version 1.1.
+loop in a daemon thread, discover and connect to hub before returning as before.
 
     import time
     from pynobo import nobo
