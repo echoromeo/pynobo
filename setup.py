@@ -28,7 +28,7 @@ setup(
     # For a discussion on single-sourcing the version across setup.py and the
     # project code, see
     # https://packaging.python.org/en/latest/single_source_version.html
-    version='2.0.0',
+    version='1.2.0',
     description='Nobø Hub / Nobø Energy Control TCP/IP Interface',
 
     # This is an optional longer description of your project that represents
@@ -51,7 +51,7 @@ setup(
     # This should be your name or the name of the organization which owns the
     # project.
     author='echoromeo, capelevy, oyvindwe',
-    author_email='felis.lynx@gmail.com',  # Optional
+#    author_email='project@email.com',  # Optional
 
     # Classifiers help users find your project by categorizing it.
     #
