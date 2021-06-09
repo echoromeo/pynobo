@@ -31,6 +31,8 @@ setup(
     version='1.2.0',
     description='Nobø Hub / Nobø Energy Control TCP/IP Interface',
 
+    license='GPLv3+',
+    
     # This is an optional longer description of your project that represents
     # the body of text which users will see when they visit PyPI.
     #
