@@ -160,7 +160,7 @@ class nobo:
         """
         A device model that supports Nobø Ecohub.
 
-        Lists of devices:
+        Official lists of devices:
         https://help.nobo.no/en/user-manual/before-you-start/what-is-a-receiver/list-of-receivers/
         https://help.nobo.no/en/user-manual/before-you-start/what-is-a-transmitter/list-of-transmitters/
         """
@@ -175,15 +175,17 @@ class nobo:
                 model_id: str,
                 type: Union[THERMOSTAT, SWITCH, CONTROL_PANEL, UNKNOWN],
                 name: str,
-                set_comfort: bool=True,
-                set_eco: bool=True,
-                has_temp_sensor: bool=False
-        ):
+                *,
+                supports_comfort: bool = False,
+                supports_eco: bool = False,
+                requires_control_panel = False,
+                has_temp_sensor: bool = False):
             self._model_id = model_id
             self._type = type
             self._name = name
-            self._set_comfort = set_comfort
-            self._set_eco = set_eco
+            self._supports_comfort = supports_comfort
+            self._supports_eco = supports_eco
+            self._requires_control_panel = requires_control_panel
             self._has_temp_sensor = has_temp_sensor
 
         @property
@@ -202,14 +204,19 @@ class nobo:
             return self._type
 
         @property
-        def set_comfort(self) -> bool:
+        def supports_comfort(self) -> bool:
             """Return True if comfort temperature can be set on hub."""
-            return self._set_comfort
+            return self._supports_comfort
 
         @property
-        def set_eco(self) -> bool:
+        def supports_eco(self) -> bool:
             """Return True if eco temperature can be set on hub."""
-            return self._set_eco
+            return self._supports_eco
+
+        @property
+        def requires_control_panel(self) -> bool:
+            """Return True if setting temperature on hub requires a control panel in the zone."""
+            return self._requires_control_panel
 
         @property
         def has_temp_sensor(self) -> bool:
@@ -217,30 +224,33 @@ class nobo:
             return self._has_temp_sensor
 
     MODELS = {
-        "120": Model("129", Model.SWITCH, "RS 700", False, False),
-        "160": Model("160", Model.THERMOSTAT, "R80 RDC 700", False, False),
-        "168": Model("168", Model.THERMOSTAT, "NCU-2R"),
-        "182": Model("182", Model.THERMOSTAT, "R80 RSC 700", False),
-        "184": Model("184", Model.THERMOSTAT, "NCU-1R", False),
-        "192": Model("192", Model.THERMOSTAT, "TXF"),
-        "198": Model("198", Model.THERMOSTAT, "NCU-ER"),
-        "200": Model("200", Model.THERMOSTAT, "TRB 36 700", False, False),
-        "210": Model("210", Model.THERMOSTAT, "NTB-2R"),
-        "234": Model("234", Model.CONTROL_PANEL, "SW4", False, False, True),
+        "120": Model("129", Model.SWITCH, "RS 700"),
+        "121": Model("121", Model.SWITCH, "RSX 700"),
+        "130": Model("130", Model.SWITCH, "RCE 700"),
+        "160": Model("160", Model.THERMOSTAT, "R80 RDC 700"),
+        "165": Model("165", Model.THERMOSTAT, "R80 RDC 700 LST (GB)"),
+        "168": Model("168", Model.THERMOSTAT, "NCU-2R", supports_comfort=True, supports_eco=True),
+        "170": Model("170", Model.THERMOSTAT, "Serie 18, ewt touch", supports_comfort=True, supports_eco=True), # Not verified if temperature can be set remotely
+        "180": Model("180", Model.THERMOSTAT, "2NC9 700", supports_eco=True),
+        "182": Model("182", Model.THERMOSTAT, "R80 RSC 700 (5-24)", supports_eco=True),
+        "183": Model("182", Model.THERMOSTAT, "R80 RSC 700 (5-30)", supports_eco=True),
+        "184": Model("184", Model.THERMOSTAT, "NCU-1R", supports_eco=True),
+        "186": Model("186", Model.THERMOSTAT, "DCU-1R", supports_eco=True),
+        "190": Model("190", Model.THERMOSTAT, "Safir", supports_comfort=True, supports_eco=True, requires_control_panel=True),
+        "192": Model("192", Model.THERMOSTAT, "R80 TXF 700", supports_comfort=True, supports_eco=True, requires_control_panel=True),
+        "194": Model("194", Model.THERMOSTAT, "R80 RXC 700", supports_comfort=True, supports_eco=True),
+        "198": Model("198", Model.THERMOSTAT, "NCU-ER", supports_comfort=True, supports_eco=True),
+        "200": Model("200", Model.THERMOSTAT, "TRB 36 700"),
+        "210": Model("210", Model.THERMOSTAT, "NTB-2R", supports_comfort=True, supports_eco=True),
+        "220": Model("220", Model.THERMOSTAT, "TR36", supports_eco=True),
+        "230": Model("230", Model.THERMOSTAT, "TCU 700"),
+        "231": Model("231", Model.THERMOSTAT, "THB 700"),
+        "232": Model("232", Model.THERMOSTAT, "TXB 700"),
+        "234": Model("234", Model.CONTROL_PANEL, "SW4", has_temp_sensor=True),
     }
-    # Unknown serial prefix for this models:
-    # Model("", Model.THERMOSTAT, "DCU-1R", False)
-    # Model("", Model.THERMOSTAT, "DCU-2R")
-    # Model("", Model.THERMOSTAT, "DCU-ER")
-    # Model("", Model.THERMOSTAT, "R80 RXC 700")
-    # Model("", Model.THERMOSTAT, "R80 TXF 700") # Requires temperature sensor (SW4) in zone
-    # Model("", Model.THERMOSTAT, "2NC9 700", False)
-    # Model("", Model.THERMOSTAT, "TXB 700", False, False)
-    # Model("", Model.THERMOSTAT, "TR36", False)
-    # Model("", Model.THERMOSTAT, "TCU700", False, False)
-    # Model("", Model.THERMOSTAT, "Safir") # Requires temperature sensor (SW4) in zone
-    # Model("", Model.SWITCH, "RSX 700", False, False)
-    # Model("", Model.SWITCH, "RCE 700", False, False)
+    # Unknown serial prefix for these models:
+    # Model("", Model.THERMOSTAT, "DCU-2R", supports_comfort=True, supports_eco=True)
+    # Model("", Model.THERMOSTAT, "DCU-ER", supports_comfort=True, supports_eco=True)
 
     class DiscoveryProtocol(asyncio.DatagramProtocol):
         """Protocol to discover Nobø Echohub on local network."""
@@ -679,7 +689,7 @@ class nobo:
             else:
                 dicti['model'] = nobo.Model(
                     model_id,
-                    "Unknown",
+                    nobo.Model.UNKNOWN,
                     f'Unknown (serial number: {serial[:3]} {serial[3:6]} {serial[6:9]} {serial[9:]})'
                 )
             self.components[dicti['serial']] = dicti
