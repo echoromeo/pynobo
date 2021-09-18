@@ -165,13 +165,13 @@ class nobo:
         https://help.nobo.no/en/user-manual/before-you-start/what-is-a-transmitter/list-of-transmitters/
         """
 
-        THERMOSTAT_HEATER = "thermostat_heater"
-        THERMOSTAT_FLOOR = "thermostat_floor"
-        THERMOSTAT_ROOM = "thermostat_room"
-        SWITCH = "switch"
-        SWITCH_OUTLET = "switch_outlet"
-        CONTROL_PANEL = "control_panel"
-        UNKNOWN = "unknown"
+        THERMOSTAT_HEATER = "THERMOSTAT_HEATER"
+        THERMOSTAT_FLOOR = "THERMOSTAT_FLOOR"
+        THERMOSTAT_ROOM = "THERMOSTAT_ROOM"
+        SWITCH = "SWITCH"
+        SWITCH_OUTLET = "SWITCH_OUTLET"
+        CONTROL_PANEL = "CONTROL_PANEL"
+        UNKNOWN = "UNKNOWN"
 
         def __init__(
                 self,
@@ -244,6 +244,7 @@ class nobo:
         "192": Model("192", Model.THERMOSTAT_HEATER, "R80 TXF 700", supports_comfort=True, supports_eco=True, requires_control_panel=True),
         "194": Model("194", Model.THERMOSTAT_HEATER, "R80 RXC 700", supports_comfort=True, supports_eco=True),
         "198": Model("198", Model.THERMOSTAT_HEATER, "NCU-ER", supports_comfort=True, supports_eco=True),
+        "199": Model("199", Model.THERMOSTAT_HEATER, "DCU-ER", supports_comfort=True, supports_eco=True),
         "200": Model("200", Model.THERMOSTAT_FLOOR, "TRB 36 700"),
         "210": Model("210", Model.THERMOSTAT_FLOOR, "NTB-2R", supports_comfort=True, supports_eco=True),
         "220": Model("220", Model.THERMOSTAT_FLOOR, "TR36", supports_eco=True),
@@ -252,8 +253,6 @@ class nobo:
         "232": Model("232", Model.THERMOSTAT_ROOM, "TXB 700"),
         "234": Model("234", Model.CONTROL_PANEL, "SW4", has_temp_sensor=True),
     }
-    # Unknown serial prefix for this model:
-    # Model("", Model.THERMOSTAT_HEATER, "DCU-ER", supports_comfort=True, supports_eco=True)
 
     class DiscoveryProtocol(asyncio.DatagramProtocol):
         """Protocol to discover Nobø Echohub on local network."""
