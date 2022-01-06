@@ -227,7 +227,7 @@ class nobo:
             return self._has_temp_sensor
 
     MODELS = {
-        "120": Model("129", Model.SWITCH, "RS 700"),
+        "120": Model("120", Model.SWITCH, "RS 700"),
         "121": Model("121", Model.SWITCH, "RSX 700"),
         "130": Model("130", Model.SWITCH_OUTLET, "RCE 700"),
         "160": Model("160", Model.THERMOSTAT_HEATER, "R80 RDC 700"),
@@ -237,7 +237,7 @@ class nobo:
         "170": Model("170", Model.THERMOSTAT_HEATER, "Serie 18, ewt touch", supports_comfort=True, supports_eco=True), # Not verified if temperature can be set remotely
         "180": Model("180", Model.THERMOSTAT_HEATER, "2NC9 700", supports_eco=True),
         "182": Model("182", Model.THERMOSTAT_HEATER, "R80 RSC 700 (5-24)", supports_eco=True),
-        "183": Model("182", Model.THERMOSTAT_HEATER, "R80 RSC 700 (5-30)", supports_eco=True),
+        "183": Model("183", Model.THERMOSTAT_HEATER, "R80 RSC 700 (5-30)", supports_eco=True),
         "184": Model("184", Model.THERMOSTAT_HEATER, "NCU-1R", supports_eco=True),
         "186": Model("186", Model.THERMOSTAT_HEATER, "DCU-1R", supports_eco=True),
         "190": Model("190", Model.THERMOSTAT_HEATER, "Safir", supports_comfort=True, supports_eco=True, requires_control_panel=True),
