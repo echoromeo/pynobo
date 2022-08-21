@@ -295,7 +295,7 @@ class nobo:
         Initialize logger and dictionaries.
 
         :param serial: The last 3 digits of the Ecohub serial number or the complete 12 digit serial number
-        :param ip: ip address to search for Ecohub at (default None)
+        :param ip: IP address to search for Ecohub at (default None)
         :param discover: True/false for using UDP autodiscovery for the IP (default True)
         :param loop: Deprecated
         :param synchronous: True/false for using the module synchronously. For backwards compatibility.
@@ -529,7 +529,9 @@ class nobo:
         _LOGGER.info('reconnected to Nobø Hub')
 
     @staticmethod
-    def discover_hubs(serial="", ip=None, autodiscover_wait=3.0):
+    def discover_hubs(serial="", ip=None, autodiscover_wait=3.0, loop=None):
+        if loop is not None:
+            _LOGGER.warning("loop is deprecated")
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -538,7 +540,7 @@ class nobo:
         return loop.run_until_complete(nobo.async_discover_hubs(serial, ip, autodiscover_wait))
 
     @staticmethod
-    async def async_discover_hubs(serial="", ip=None, autodiscover_wait=3.0, rediscover=False):
+    async def async_discover_hubs(serial="", ip=None, autodiscover_wait=3.0, loop=None, rediscover=False):
         """
         Attempt to autodiscover Nobø Ecohubs on the local network.
 
@@ -559,11 +561,14 @@ class nobo:
         :param serial: The last 3 digits of the Ecohub serial number or the complete 12 digit serial number
         :param ip: ip address to search for Ecohub at (default None)
         :param autodiscover_wait: how long to wait for an autodiscover package from the hub (default 3.0)
+        :param loop: deprecated
         :param rediscover: if true, run until the hub is discovered
 
         :return: a set of hubs matching that serial, ip address or both
         """
 
+        if loop is not None:
+            _LOGGER.warning("loop is deprecated.")
         transport, protocol = await asyncio.get_running_loop().create_datagram_endpoint(
             lambda: nobo.DiscoveryProtocol(serial, ip),
             local_addr=('0.0.0.0', 10000),
