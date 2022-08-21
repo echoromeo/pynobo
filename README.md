@@ -13,9 +13,9 @@ This system/service/software is not officially supported or endorsed by Glen Dim
 
     async def main():
         # Either call using the three last digits in the hub serial
-        hub = nobo('123', loop=asyncio.get_event_loop()) 
+        hub = nobo('123', synchronous=False)
         # or full serial and IP if you do not want to discover on UDP:
-        hub = nobo('123123123123', '10.0.0.128', False, loop=asyncio.get_event_loop())
+        hub = nobo('123123123123', ip='10.0.0.128', discover=False, synchronous=False)
 
         # Connect to the hub
         await hub.start()
