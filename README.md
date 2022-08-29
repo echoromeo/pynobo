@@ -58,7 +58,7 @@ It is possible to discover hubs on the local network, and also test connectivity
 
     # Test connection to the first
     (serial, ip) = hubs.pop()
-    hub = nobo(serial + '123', ip, False, loop=asyncio.get_event_loop())
+    hub = nobo(serial + '123', ip=ip, discover=False, synchronous=False)
     await hub.async_connect_hub(ip=test_ip, serial=self.serial)
 
     # Then start the background tasks
@@ -88,7 +88,7 @@ These functions sends commands to the hub.
 
 ### Dictionary helper functions
 
-These functions simplifies getting the data you want from the dictionaries. They do
+These functions simplify getting the data you want from the dictionaries. They do
 not perform any I/O, and can safely be called from the event loop.
 
 * get_week_profile_status - Get the status of a week profile at a certain time in the week 
@@ -99,8 +99,8 @@ not perform any I/O, and can safely be called from the event loop.
 ## Backwards compatibility
 
 Synchronous wrapper methods are available for compatibility with v1.1.2, but it is recommended to
-switch to the async methods. If `loop` is not provided, initializing will start the async event
-loop in a daemon thread, discover and connect to hub before returning as before.
+switch to the async methods by initializing the hub with `synchronous=False`. Otherwise, initializing
+will start the async event loop in a daemon thread, discover and connect to hub before returning as before.
 
     import time
     from pynobo import nobo
