@@ -7,6 +7,7 @@ import logging
 import time
 import threading
 import warnings
+import socket
 from typing import Union
 
 _LOGGER = logging.getLogger(__name__)
@@ -572,7 +573,7 @@ class nobo:
         transport, protocol = await asyncio.get_running_loop().create_datagram_endpoint(
             lambda: nobo.DiscoveryProtocol(serial, ip),
             local_addr=('0.0.0.0', 10000),
-            reuse_port=True)
+            reuse_port=nobo._reuse_port())
         try:
             await asyncio.sleep(autodiscover_wait)
             while rediscover and not protocol.hubs:
@@ -580,6 +581,21 @@ class nobo:
         finally:
             transport.close()
         return protocol.hubs
+
+    @staticmethod
+    def _reuse_port() -> bool:
+        """
+        Check if we can set `reuse_port` when listening for broadcasts. To support Windows.
+        """
+        if hasattr(socket, 'SO_REUSEPORT'):
+            sock = socket.socket(type=socket.SOCK_DGRAM)
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                sock.close()
+                return True
+            except OSError:
+                pass
+        return False
 
     async def keep_alive(self, interval = 14):
         """
