@@ -7,6 +7,7 @@ import logging
 import time
 import threading
 import warnings
+import socket
 from typing import Union
 
 _LOGGER = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ class nobo:
         RESPONSE_COMPONENT_INFO = 'H02'     # Response with Component info, one per message: H02 <Serial number> <Status> <Name> <Reverse on/off?> <Zoneld> <Active override Id> <Temperature sensor for zone>
         RESPONSE_WEEK_PROFILE_INFO = 'H03'  # Response with Week Profile info, one per message: H03 <Week profile id> <Name> <Profile>
         RESPONSE_OVERRIDE_INFO = 'H04'      # Response with override info, one per message: H04 <Id> <Mode> <Type> <End time> <Start time> <Override target> <Override target ID>
-        RESPONSE_HUB_INFO = 'H05'           # G00 request complete signal + static info: H05 <Snr> <Name> <DefaultAwayOverrideLength> <ActiveOverrideid> <SoftwareVersion> <HardwareVersion> <Producti???
+        RESPONSE_HUB_INFO = 'H05'           # G00 request complete signal + static info: H05 <Snr> <Name> <DefaultAwayOverrideLength> <ActiveOverrideid> <SoftwareVersion> <HardwareVersion> <ProductionDate>
 
         EXECUTE_START_SEARCH = 'X00'
         EXECUTE_STOP_SEARCH = 'X01'
@@ -290,20 +291,23 @@ class nobo:
                 if discover_ip and discover_serial:
                     self.hubs.add( (discover_ip, discover_serial) )
 
-    def __init__(self, serial, ip=None, discover=True, loop: asyncio.AbstractEventLoop = None):
+    def __init__(self, serial, ip=None, discover=True, loop=None, synchronous=True):
         """
         Initialize logger and dictionaries.
 
         :param serial: The last 3 digits of the Ecohub serial number or the complete 12 digit serial number
-        :param ip: ip address to search for Ecohub at (default None)
+        :param ip: IP address to search for Ecohub at (default None)
         :param discover: True/false for using UDP autodiscovery for the IP (default True)
-        :param loop: the asyncio event loop to use
+        :param loop: Deprecated
+        :param synchronous: True/false for using the module synchronously. For backwards compatibility.
         """
 
-        self._loop = asyncio.get_event_loop() if loop is None else loop
         self.serial = serial
         self.ip = ip
         self.discover = discover
+        if loop is not None:
+            _LOGGER.warning("loop is deprecated. Use synchronous=False instead.")
+            synchronous=False
 
         self._callbacks = []
         self._reader = None
@@ -319,14 +323,19 @@ class nobo:
         self.overrides = collections.OrderedDict()
         self.temperatures = collections.OrderedDict()
 
-        # Start asyncio in a separate thread unless an event loop was provided.
-        if loop is None:
-            self._loop.run_until_complete(self.start())
-            self._thread = threading.Thread(target=lambda: self._loop.run_forever())
-            self._thread.setDaemon(True)
-            self._thread.start()
-        else:
-            self._thread = None
+        if synchronous:
+            # Run asyncio in a separate thread
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                _LOGGER.debug("Creating new event loop")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.start())
+            _LOGGER.debug("Creating daemon thread")
+            thread = threading.Thread(target=lambda: loop.run_forever())
+            thread.setDaemon(True)
+            thread.start()
 
     def register_callback(self, callback=lambda *args, **kwargs: None):
         """
@@ -354,7 +363,7 @@ class nobo:
             connected = False
             if self.discover:
                 _LOGGER.info('Looking for Nobø Ecohub with serial: %s and ip: %s', self.serial, self.ip)
-                discovered_hubs = await self.async_discover_hubs(serial=self.serial, ip=self.ip, loop=self._loop)
+                discovered_hubs = await self.async_discover_hubs(serial=self.serial, ip=self.ip)
                 if not discovered_hubs:
                     _LOGGER.error('Failed to discover any Nobø Ecohubs')
                     raise Exception('Failed to discover any Nobø Ecohubs')
@@ -381,8 +390,9 @@ class nobo:
                 raise Exception(f'Failed to connect to Nobø Ecohub with serial: {self.serial} and ip: {self.ip}')
 
         # Start the tasks to send keep-alive and receive data
-        self._keep_alive_task = self._loop.create_task(self.keep_alive())
-        self._socket_receive_task = self._loop.create_task(self.socket_receive())
+        loop = asyncio.get_running_loop()
+        self._keep_alive_task = loop.create_task(self.keep_alive())
+        self._socket_receive_task = loop.create_task(self.socket_receive())
         _LOGGER.info('connected to Nobø Ecohub')
 
     async def stop(self):
@@ -408,7 +418,12 @@ class nobo:
             _LOGGER.info('connection closed')
 
     def connect_hub(self, ip, serial):
-        return self._loop.run_until_complete(self.async_connect_hub(ip, serial))
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(self.async_connect_hub(ip, serial))
 
     async def async_connect_hub(self, ip, serial):
         """
@@ -480,7 +495,7 @@ class nobo:
         # TODO: set timeout?
         if self.discover:
             # Reconnect using complete serial, but allow ip to change unless originally provided
-            discovered_hubs = await self.async_discover_hubs(ip=self.ip, serial=self.hub_serial, loop=self._loop, rediscover=True)
+            discovered_hubs = await self.async_discover_hubs(ip=self.ip, serial=self.hub_serial, rediscover=True)
             while discovered_hubs:
                 (discover_ip, discover_serial) = discovered_hubs.pop()
                 try:
@@ -516,8 +531,14 @@ class nobo:
 
     @staticmethod
     def discover_hubs(serial="", ip=None, autodiscover_wait=3.0, loop=None):
-        loop = asyncio.get_event_loop() if loop is None else loop
-        return loop.run_until_complete(nobo.async_discover_hubs(serial, ip, autodiscover_wait, loop))
+        if loop is not None:
+            _LOGGER.warning("loop is deprecated")
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        return loop.run_until_complete(nobo.async_discover_hubs(serial, ip, autodiscover_wait))
 
     @staticmethod
     async def async_discover_hubs(serial="", ip=None, autodiscover_wait=3.0, loop=None, rediscover=False):
@@ -541,16 +562,18 @@ class nobo:
         :param serial: The last 3 digits of the Ecohub serial number or the complete 12 digit serial number
         :param ip: ip address to search for Ecohub at (default None)
         :param autodiscover_wait: how long to wait for an autodiscover package from the hub (default 3.0)
+        :param loop: deprecated
         :param rediscover: if true, run until the hub is discovered
 
         :return: a set of hubs matching that serial, ip address or both
         """
 
-        loop = asyncio.get_event_loop() if loop is None else loop
-        transport, protocol = await loop.create_datagram_endpoint(
+        if loop is not None:
+            _LOGGER.warning("loop is deprecated.")
+        transport, protocol = await asyncio.get_running_loop().create_datagram_endpoint(
             lambda: nobo.DiscoveryProtocol(serial, ip),
             local_addr=('0.0.0.0', 10000),
-            reuse_port=True)
+            reuse_port=nobo._reuse_port())
         try:
             await asyncio.sleep(autodiscover_wait)
             while rediscover and not protocol.hubs:
@@ -558,6 +581,21 @@ class nobo:
         finally:
             transport.close()
         return protocol.hubs
+
+    @staticmethod
+    def _reuse_port() -> bool:
+        """
+        Check if we can set `reuse_port` when listening for broadcasts. To support Windows.
+        """
+        if hasattr(socket, 'SO_REUSEPORT'):
+            sock = socket.socket(type=socket.SOCK_DGRAM)
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+                sock.close()
+                return True
+            except OSError:
+                pass
+        return False
 
     async def keep_alive(self, interval = 14):
         """
@@ -572,10 +610,12 @@ class nobo:
                 await self.async_send_command([nobo.API.HANDSHAKE])
 
     def _create_task(self, target):
-        self._loop.call_soon_threadsafe(self._async_create_task, target)
-
-    def _async_create_task(self, target):
-        self._loop.create_task(target)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.call_soon_threadsafe(lambda: loop.create_task(target))
 
     def send_command(self, commands):
         self._create_task(self.async_send_command(commands))
