@@ -390,9 +390,8 @@ class nobo:
                 raise Exception(f'Failed to connect to Nobø Ecohub with serial: {self.serial} and ip: {self.ip}')
 
         # Start the tasks to send keep-alive and receive data
-        loop = asyncio.get_running_loop()
-        self._keep_alive_task = loop.create_task(self.keep_alive())
-        self._socket_receive_task = loop.create_task(self.socket_receive())
+        self._keep_alive_task = asyncio.create_task(self.keep_alive())
+        self._socket_receive_task = asyncio.create_task(self.socket_receive())
         _LOGGER.info('connected to Nobø Ecohub')
 
     async def stop(self):
@@ -695,7 +694,7 @@ class nobo:
         except Exception as e:
             # Ops, now we have real problems
             _LOGGER.error('Unhandled exception %s', e, exc_info=1)
-            # Just disconnect (in stead of risking an infinite reconnect loop)
+            # Just disconnect (instead of risking an infinite reconnect loop)
             await self.stop()
 
     def response_handler(self, response):
