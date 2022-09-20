@@ -871,6 +871,30 @@ class nobo:
         _LOGGER.debug('Status at %s on weekday %s is %s', target, dt.weekday(), nobo.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status])
         return nobo.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
 
+    def get_zone_override_mode(self, zone_id):
+        """
+        Get the override mode of a zone.
+
+        :param zone_id: the zone id in question
+
+        :return: the override mode for the zone
+        """
+        mode = nobo.API.NAME_NORMAL
+        for o in self.overrides:
+            if self.overrides[o]['mode'] == '0':
+                continue # "normal" overrides
+            elif (self.overrides[o]['target_type'] == nobo.API.OVERRIDE_TARGET_ZONE
+                  and self.overrides[o]['target_id'] == zone_id):
+                mode = nobo.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+                # Takes precedence over global override
+                break
+            elif (self.zones[zone_id]['override_allowed'] == '1'
+                  and self.overrides[o]['target_type'] == nobo.API.OVERRIDE_TARGET_GLOBAL):
+                mode = nobo.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+
+        _LOGGER.debug('Current override for zone %s is %s', self.zones[zone_id]['name'], mode)
+        return mode
+
     def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
         """
         Get the mode of a zone at a certain time. If the zone is overridden only now is possible.
@@ -881,22 +905,9 @@ class nobo:
         :return: the mode for the zone
         """
         current_time = (now.hour*100) + now.minute
-        current_mode = ''
-
-        # check if the zone is overridden and to which mode
-        for o in self.overrides:
-            if self.overrides[o]['mode'] == '0':
-                continue # "normal" overrides
-            elif (self.overrides[o]['target_type'] == nobo.API.OVERRIDE_TARGET_ZONE
-                  and self.overrides[o]['target_id'] == zone_id):
-                current_mode = nobo.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
-                break # Takes precedence over global override
-            elif (self.zones[zone_id]['override_allowed'] == '1'
-                  and self.overrides[o]['target_type'] == nobo.API.OVERRIDE_TARGET_GLOBAL):
-                current_mode = nobo.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
-
-        # no override - find mode from week profile
-        if not current_mode:
+        current_mode = self.get_zone_override_mode(zone_id)
+        if current_mode == nobo.API.NAME_NORMAL:
+            # no override - find mode from week profile
             current_mode = self.get_week_profile_status(self.zones[zone_id]['week_profile_id'], now)
 
         _LOGGER.debug('Current mode for zone %s at %s is %s', self.zones[zone_id]['name'], current_time, current_mode)
