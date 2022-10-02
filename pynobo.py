@@ -887,10 +887,10 @@ class nobo:
         for o in self.overrides:
             if self.overrides[o]['mode'] == '0':
                 continue # "normal" overrides
-            elif self.overrides[o]['target_type'] == nobo.API.OVERRIDE_TARGET_ZONE:
-                if self.overrides[o]['target_id'] == zone_id:
-                    current_mode = nobo.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
-                    break # Takes precedence over global override
+            elif (self.overrides[o]['target_type'] == nobo.API.OVERRIDE_TARGET_ZONE
+                  and self.overrides[o]['target_id'] == zone_id):
+                current_mode = nobo.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
+                break # Takes precedence over global override
             elif (self.zones[zone_id]['override_allowed'] == '1'
                   and self.overrides[o]['target_type'] == nobo.API.OVERRIDE_TARGET_GLOBAL):
                 current_mode = nobo.API.DICT_OVERRIDE_MODE_TO_NAME[self.overrides[o]['mode']]
