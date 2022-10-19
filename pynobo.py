@@ -356,7 +356,7 @@ class nobo:
         self._callbacks.remove(callback)
 
     async def connect(self):
-        """Connect to Ecoub, either by scanning or directly."""
+        """Connect to Ecohub, either by scanning or directly."""
         connected = False
         if self.discover:
             _LOGGER.info('Looking for Nobø Ecohub with serial: %s and ip: %s', self.serial, self.ip)
