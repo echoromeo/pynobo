@@ -29,7 +29,7 @@ This system/service/software is not officially supported or endorsed by Glen Dim
             print(hub.overrides)
             print(hub.temperatures)
     
-        # Get initial data
+        # Read the initial data
         update(hub)
     
         # Listen for data updates - register before getting initial data to avoid race condition
