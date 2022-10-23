@@ -17,8 +17,8 @@ This system/service/software is not officially supported or endorsed by Glen Dim
         # or full serial and IP if you do not want to discover on UDP:
         hub = nobo('123123123123', ip='10.0.0.128', discover=False, synchronous=False)
 
-        # Connect to the hub
-        await hub.start()
+        # Connect to the hub and get initial data
+        await hub.connect()
 
         # Inspect what you get
         def update(hub):
@@ -29,12 +29,16 @@ This system/service/software is not officially supported or endorsed by Glen Dim
             print(hub.overrides)
             print(hub.temperatures)
     
+        # Read the initial data
+        update(hub)
+    
         # Listen for data updates - register before getting initial data to avoid race condition
         hub.register_callback(callback=update)
 
-        # Get initial data
-        update(hub)
-    
+        # Start the background tasks for reading responses and keep connction alive
+        # This will connect to the hub if necessary
+        await hub.start()
+
         # Hang around and wait for data updates
         await asyncio.sleep(60)
     
@@ -59,7 +63,7 @@ It is possible to discover hubs on the local network, and also test connectivity
     # Test connection to the first
     (serial, ip) = hubs.pop()
     hub = nobo(serial + '123', ip=ip, discover=False, synchronous=False)
-    await hub.async_connect_hub(ip=test_ip, serial=self.serial)
+    await hub.connect()
 
     # Then start the background tasks
     await hub.start()
@@ -80,7 +84,7 @@ If the connection is lost, it will attempt to reconnect.
 
 ### Command Functions
 
-These functions sends commands to the hub.
+These functions send commands to the hub.
 
 * async_send_command - Send a list of command string(s) to the hub
 * async_create_override - Override hub/zones/components
@@ -95,6 +99,7 @@ not perform any I/O, and can safely be called from the event loop.
 * get_current_zone_mode - Get the mode of a zone at a certain time
 * get_current_component_temperature - Get the current temperature from a component
 * get_current_zone_temperature - Get the current temperature from (the first component in) a zone
+* get_zone_override_mode - Get the override mode for the zone
 
 ## Backwards compatibility
 
