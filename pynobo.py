@@ -775,7 +775,7 @@ class nobo:
         elif response[0] == nobo.API.RESPONSE_REMOVE_OVERRIDE:
             dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_OVERRIDE, response[1:]))
             self.overrides.pop(dicti['override_id'], None)
-            _LOGGER.info('removed override: id%s', dicti['override_id'])
+            _LOGGER.info('removed override: %s', dicti['override_id'])
 
         # Component temperature data
         elif response[0] == nobo.API.RESPONSE_COMPONENT_TEMP:
