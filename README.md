@@ -32,7 +32,7 @@ This system/service/software is not officially supported or endorsed by Glen Dim
         # Read the initial data
         update(hub)
     
-        # Listen for data updates - register before getting initial data to avoid race condition
+        # Listen for data updates - register before calling hub.start() to avoid race condition
         hub.register_callback(callback=update)
 
         # Start the background tasks for reading responses and keep connction alive

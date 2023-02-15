@@ -775,7 +775,7 @@ class nobo:
         elif response[0] == nobo.API.RESPONSE_REMOVE_OVERRIDE:
             dicti = collections.OrderedDict(zip(nobo.API.STRUCT_KEYS_OVERRIDE, response[1:]))
             self.overrides.pop(dicti['override_id'], None)
-            _LOGGER.info('removed override: id%s', dicti['override_id'])
+            _LOGGER.info('removed override: %s', dicti['override_id'])
 
         # Component temperature data
         elif response[0] == nobo.API.RESPONSE_COMPONENT_TEMP:
@@ -898,7 +898,7 @@ class nobo:
         _LOGGER.debug('Current override for zone %s is %s', self.zones[zone_id]['name'], mode)
         return mode
 
-    def get_current_zone_mode(self, zone_id, now=datetime.datetime.today()):
+    def get_current_zone_mode(self, zone_id, now=None):
         """
         Get the mode of a zone at a certain time. If the zone is overridden only now is possible.
 
@@ -907,6 +907,8 @@ class nobo:
 
         :return: the mode for the zone
         """
+        if now is None:
+            now = datetime.datetime.today()
         current_time = (now.hour*100) + now.minute
         current_mode = self.get_zone_override_mode(zone_id)
         if current_mode == nobo.API.NAME_NORMAL:
