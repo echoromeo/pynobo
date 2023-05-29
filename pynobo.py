@@ -849,6 +849,31 @@ class nobo:
 
         await self.async_send_command(command)
 
+    def update_week_profile(self, week_profile_id, name=None, profile=None):
+        self._create_task(self.async_update_week_profile(week_profile_id, name, profile))
+
+    async def async_update_week_profile(self, week_profile_id, name=None, profile=None):
+        """
+        Update the name and profile parameter for a week.
+
+        :param week_profile_id: the week_profile_id
+        :param name: the new zone name (default None)
+        :param profile: the new profile (default None)
+        """
+
+        # Initialize command with the current zone settings
+        command = [nobo.API.UPDATE_WEEK_PROFILE] + list(self.week_profiles[week_profile_id].values())
+
+        # Replace command with arguments that are not None. Is there a more elegant way?
+        if name:
+            command[2] = name
+        if profile:
+            command[3] = profile
+        converted_profile =','.join(command[3])
+        command[3]=converted_profile
+
+        await self.async_send_command(command)
+
     def get_week_profile_status(self, week_profile_id, dt=datetime.datetime.today()):
         """
         Get the status of a week profile at a certain time in the week. Monday is day 0.
