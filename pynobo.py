@@ -915,7 +915,7 @@ class nobo:
             raise ValueError(f'Comfort temperature({command[4]}°C) cannot be less than eco temperature({command[5]}°C)')
 
         await self.async_send_command(command)
-    
+
     def test_week_profile(self,profile):
         if type(profile) != list:
             return False
@@ -963,7 +963,7 @@ class nobo:
         """
         Add the name and profile parameter for a week.
 
-        :param name: the new zone name 
+        :param name: the new zone name
         :param profile: the new profile (default None)
         """
 
@@ -972,7 +972,7 @@ class nobo:
             profile=list(['00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000'])
         if self.test_week_profile(profile):
             raise ValueError ("tesr of week profile fails")
-    
+
 
         # profile id is decided by the hub
         week_profile_id='0'
