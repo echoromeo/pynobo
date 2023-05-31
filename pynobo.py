@@ -177,6 +177,9 @@ class nobo:
                 return False
             return True
 
+        def time_is_quarter(minutes: str):
+            return int(minutes) % 15 == 0
+
         def validate_temperature(temperature: str):
             if not temperature.isdigit():
                 raise ValueError(f'Temperature "{temperature}" must be digits')
@@ -837,8 +840,8 @@ class nobo:
         :param type: API.OVERRIDE_TYPE. NOW, TIMER, FROM_TO or CONSTANT
         :param target_type: API.OVERRIDE_TARGET. GLOBAL or ZONE
         :param target_id: the target id (default -1)
-        :param end_time: the end time (default -1)
-        :param start_time: the start time (default -1)
+        :param end_time: the end time (default -1), format YYYYMMDDhhmm, where mm must be in whole 15 minutes
+        :param start_time: the start time (default -1), format YYYYMMDDhhmm, where mm must be in whole 15 minutes
         """
         if not mode in nobo.API.OVERRIDE_MODES:
             raise ValueError(f'Unknown override mode {mode}')
@@ -848,10 +851,16 @@ class nobo:
             raise ValueError(f'Unknown override target type {target_type}')
         if target_id != '-1' and not target_id in self.zones:
             raise ValueError(f'Unknown override target {target_id}')
-        if end_time != '-1' and not nobo.API.is_valid_datetime(end_time):
-            raise ValueError(f'Illegal end_time: {end_time}')
-        if start_time != '-1' and not nobo.API.is_valid_datetime(start_time):
-            raise ValueError(f'Illegal start_time: {start_time}')
+        if end_time != '-1':
+            if not nobo.API.is_valid_datetime(end_time):
+                raise ValueError(f'Illegal end_time {end_time}: Cannot parse')
+            if not nobo.API.time_is_quarter(end_time[-2:]):
+                raise ValueError(f'Illegal end_time {end_time}: Must be in whole 15 minutes')
+        if start_time != '-1':
+            if not nobo.API.is_valid_datetime(start_time):
+                raise ValueError(f'Illegal start_time: {start_time}: Cannot parse')
+            if not nobo.API.time_is_quarter(end_time[-2:]):
+                raise ValueError(f'Illegal start_time {end_time}: Must be in whole 15 minutes')
         command = [nobo.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         await self.async_send_command(command)
         for o in self.overrides: # Save override before command has finished executing
@@ -873,6 +882,9 @@ class nobo:
         :param temp_eco_c: the new eco temperature (default None)
         :param override_allowed: the new override allow setting (default None)
         """
+
+        if not zone_id in self.zones:
+            raise ValueError(f'Unknown zone id {zone_id}')
 
         # Initialize command with the current zone settings
         command = [nobo.API.UPDATE_ZONE] + list(self.zones[zone_id].values())
