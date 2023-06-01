@@ -122,15 +122,21 @@ class nobo:
         OVERRIDE_MODE_COMFORT = '1'
         OVERRIDE_MODE_ECO = '2'
         OVERRIDE_MODE_AWAY = '3'
+        OVERRIDE_MODES = [OVERRIDE_MODE_NORMAL, OVERRIDE_MODE_COMFORT, OVERRIDE_MODE_ECO, OVERRIDE_MODE_AWAY]
 
         OVERRIDE_TYPE_NOW = '0'
         OVERRIDE_TYPE_TIMER = '1'
         OVERRIDE_TYPE_FROM_TO = '2'
         OVERRIDE_TYPE_CONSTANT = '3'
+        OVERRIDE_TYPES = [OVERRIDE_TYPE_NOW, OVERRIDE_TYPE_TIMER, OVERRIDE_TYPE_FROM_TO, OVERRIDE_TYPE_CONSTANT]
 
         OVERRIDE_TARGET_GLOBAL = '0'
         OVERRIDE_TARGET_ZONE = '1'
         OVERRIDE_TARGET_COMPONENT = '2'     # Not implemented yet
+        OVERRIDE_TARGETS = [OVERRIDE_TARGET_GLOBAL, OVERRIDE_TARGET_ZONE, OVERRIDE_TARGET_COMPONENT]
+
+        OVERRIDE_NOT_ALLOWED = '0'
+        OVERRIDE_ALLOWED = '1'
 
         OVERRIDE_ID_NONE = '-1'
         OVERRIDE_ID_HUB = '-1'
@@ -156,6 +162,33 @@ class nobo:
         DICT_WEEK_PROFILE_STATUS_TO_NAME = {WEEK_PROFILE_STATE_ECO : NAME_ECO, WEEK_PROFILE_STATE_COMFORT : NAME_COMFORT, WEEK_PROFILE_STATE_AWAY : NAME_AWAY, WEEK_PROFILE_STATE_OFF : NAME_OFF}
         DICT_NAME_TO_OVERRIDE_MODE = {NAME_NORMAL : OVERRIDE_MODE_NORMAL, NAME_COMFORT : OVERRIDE_MODE_COMFORT, NAME_ECO : OVERRIDE_MODE_ECO, NAME_AWAY : OVERRIDE_MODE_AWAY}
         DICT_NAME_TO_WEEK_PROFILE_STATUS = {NAME_ECO : WEEK_PROFILE_STATE_ECO, NAME_COMFORT : WEEK_PROFILE_STATE_COMFORT, NAME_AWAY : WEEK_PROFILE_STATE_AWAY, NAME_OFF : WEEK_PROFILE_STATE_OFF}
+
+        def is_valid_datetime(timestamp: str):
+            try:
+                datetime.datetime.strptime(timestamp, '%Y%m%d%H%M')
+            except ValueError:
+                return False
+            return True
+
+        def is_valid_time(time_of_day: str):
+            try:
+                datetime.datetime.strptime(time_of_day, '%H%M')
+            except ValueError:
+                return False
+            return True
+
+        def time_is_quarter(minutes: str):
+            return int(minutes) % 15 == 0
+
+        def validate_temperature(temperature: str):
+            if not temperature.isdigit():
+                raise ValueError(f'Temperature "{temperature}" must be digits')
+            temperature_int = int(temperature)
+            if temperature_int < 7:
+                raise ValueError(f'Min temperature is 7°C')
+            if temperature_int > 30:
+                raise ValueError(f'Max temperature is 30°C')
+
 
     class Model:
         """
@@ -434,6 +467,8 @@ class nobo:
         :param ip: The ecohub ip address to connect to
         :param serial: The complete 12 digit serial number of the hub to connect to
         """
+        if len(serial) != 12 or not serial.isdigit():
+            raise ValueError(f'Invalid serial number: {serial}')
 
         self._reader, self._writer = await asyncio.wait_for(asyncio.open_connection(ip, 27779), timeout=5)
 
@@ -799,15 +834,33 @@ class nobo:
 
     async def async_create_override(self, mode, type, target_type, target_id='-1', end_time='-1', start_time='-1'):
         """
-        Override hub/zones/components. Use OVERRIDE_MODE_NOMAL to disable an existing override.
+        Override hub/zones/components. Use OVERRIDE_MODE_NORMAL to disable an existing override.
 
         :param mode: API.OVERRIDE_MODE. NORMAL, COMFORT, ECO or AWAY
         :param type: API.OVERRIDE_TYPE. NOW, TIMER, FROM_TO or CONSTANT
         :param target_type: API.OVERRIDE_TARGET. GLOBAL or ZONE
         :param target_id: the target id (default -1)
-        :param end_time: the end time (default -1)
-        :param start_time: the start time (default -1)
+        :param end_time: the end time (default -1), format YYYYMMDDhhmm, where mm must be in whole 15 minutes
+        :param start_time: the start time (default -1), format YYYYMMDDhhmm, where mm must be in whole 15 minutes
         """
+        if not mode in nobo.API.OVERRIDE_MODES:
+            raise ValueError(f'Unknown override mode {mode}')
+        if not type in nobo.API.OVERRIDE_TYPES:
+            raise ValueError(f'Unknown override type {type}')
+        if not target_type in nobo.API.OVERRIDE_TARGETS:
+            raise ValueError(f'Unknown override target type {target_type}')
+        if target_id != '-1' and not target_id in self.zones:
+            raise ValueError(f'Unknown override target {target_id}')
+        if end_time != '-1':
+            if not nobo.API.is_valid_datetime(end_time):
+                raise ValueError(f'Illegal end_time {end_time}: Cannot parse')
+            if not nobo.API.time_is_quarter(end_time[-2:]):
+                raise ValueError(f'Illegal end_time {end_time}: Must be in whole 15 minutes')
+        if start_time != '-1':
+            if not nobo.API.is_valid_datetime(start_time):
+                raise ValueError(f'Illegal start_time: {start_time}: Cannot parse')
+            if not nobo.API.time_is_quarter(end_time[-2:]):
+                raise ValueError(f'Illegal start_time {end_time}: Must be in whole 15 minutes')
         command = [nobo.API.ADD_OVERRIDE, '1', mode, type, end_time, start_time, target_type, target_id]
         await self.async_send_command(command)
         for o in self.overrides: # Save override before command has finished executing
@@ -830,22 +883,36 @@ class nobo:
         :param override_allowed: the new override allow setting (default None)
         """
 
+        if not zone_id in self.zones:
+            raise ValueError(f'Unknown zone id {zone_id}')
+
         # Initialize command with the current zone settings
         command = [nobo.API.UPDATE_ZONE] + list(self.zones[zone_id].values())
 
-        # Replace command with arguments that are not None. Is there a more elegant way?
+        # Replace command with arguments that are not None.
         if name:
+            name = name.replace(" ", "\u00A0")
+            if len(name.encode('utf-8')) > 100:
+                raise ValueError(f'Zone name "{name}" too long (max 100 bytes when encoded as UTF-8)')
             command[2] = name
         if week_profile_id:
+            if not week_profile_id in self.week_profiles:
+                raise ValueError(f'Unknown week profile id {week_profile_id}')
             command[3] = week_profile_id
         if temp_comfort_c:
+            nobo.API.validate_temperature(temp_comfort_c)
             command[4] = temp_comfort_c
             self.zones[zone_id]['temp_comfort_c'] = temp_comfort_c # Save setting before sending command
         if temp_eco_c:
+            nobo.API.validate_temperature(temp_eco_c)
             command[5] = temp_eco_c
             self.zones[zone_id]['temp_eco_c'] = temp_eco_c # Save setting before sending command
         if override_allowed:
+            if override_allowed != nobo.API.OVERRIDE_NOT_ALLOWED and override_allowed != nobo.API.OVERRIDE_ALLOWED:
+                raise ValueError(f'Illegal value for override allowed: {override_allowed}')
             command[6] = override_allowed
+        if int(command[4]) < int(command[5]):
+            raise ValueError(f'Comfort temperature({command[4]}°C) cannot be less than eco temperature({command[5]}°C)')
 
         await self.async_send_command(command)
     
