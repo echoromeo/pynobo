@@ -928,7 +928,7 @@ class nobo:
             if (not i.endswith('0')) or (not i.endswith('1')) or (not i.endswith('2')) or (not i.endswith('3')) or (not i.endswith('4')) :
                 return False
             if len(i)==5:
-                if (i[2:3]!='00') or (i[2:3]!='15') or (i[2:3]!='30') or (i[2:3]!='45'):
+                if time_is_quarter(i[2:3]):
                     return False
 
         if zero_day_count<7:
@@ -975,8 +975,7 @@ class nobo:
         if profile==None:
             profile=list(['00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000'])
         if self.test_week_profile(profile):
-            raise ValueError ("tesr of week profile fails")
-
+            raise ValueError ("test of week profile fails")
 
         # profile id is decided by the hub
         week_profile_id='0'
