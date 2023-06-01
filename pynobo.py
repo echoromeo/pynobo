@@ -915,6 +915,26 @@ class nobo:
             raise ValueError(f'Comfort temperature({command[4]}°C) cannot be less than eco temperature({command[5]}°C)')
 
         await self.async_send_command(command)
+    
+    def test_week_profile(self,profile):
+        if type(profile) != list:
+            return False
+        if len(profile)<7:
+            return False
+        zero_day_count=0
+        for i in profile:
+            if i.startswith('0000'):
+                zero_day_count+=1
+            if (not i.endswith('0')) or (not i.endswith('1')) or (not i.endswith('2')) or (not i.endswith('3')) or (not i.endswith('4')) :
+                return False
+            if len(i)==5:
+                if (i[2:3]!='00') or (i[2:3]!='15') or (i[2:3]!='30') or (i[2:3]!='45'):
+                    return False
+
+        if zero_day_count<7:
+            return False
+        return True
+
 
     def update_week_profile(self, week_profile_id, name=None, profile=None):
         self._create_task(self.async_update_week_profile(week_profile_id, name, profile))
@@ -940,6 +960,30 @@ class nobo:
         command[3]=converted_profile
 
         await self.async_send_command(command)
+
+
+    async def async_add_week_profile(self,name,profile=None):
+        """
+        Add the name and profile parameter for a week.
+
+        :param name: the new zone name 
+        :param profile: the new profile (default None)
+        """
+
+        # if no profile is defined
+        if profile==None:
+            profile=list(['00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000'])
+        if self.test_week_profile(profile):
+            raise ValueError ("tesr of week profile fails")
+    
+
+        # profile id is decided by the hub
+        converted_profile =','.join(profile)
+        command = [nobo.API.ADD_WEEK_PROFILE] + ['0'] + [name] + [converted_profile]
+        await self.async_send_command(command)
+
+
+
 
     def get_week_profile_status(self, week_profile_id, dt=datetime.datetime.today()):
         """
