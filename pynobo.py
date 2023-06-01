@@ -936,9 +936,6 @@ class nobo:
         return True
 
 
-    def update_week_profile(self, week_profile_id, name=None, profile=None):
-        self._create_task(self.async_update_week_profile(week_profile_id, name, profile))
-
     async def async_update_week_profile(self, week_profile_id, name=None, profile=None):
         """
         Update the name and profile parameter for a week.
@@ -978,8 +975,9 @@ class nobo:
     
 
         # profile id is decided by the hub
+        week_profile_id='0'
         converted_profile =','.join(profile)
-        command = [nobo.API.ADD_WEEK_PROFILE] + ['0'] + [name] + [converted_profile]
+        command = [nobo.API.ADD_WEEK_PROFILE] + [week_profile_id] + [name] + [converted_profile]
         await self.async_send_command(command)
 
 
