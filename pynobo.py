@@ -950,7 +950,11 @@ class nobo:
 
         # Replace command with arguments that are not None. Is there a more elegant way?
         if name:
+            name = name.replace(" ", "\u00A0")
+            if len(name.encode('utf-8')) > 100:
+                 raise ValueError(f'Zone name "{name}" too long (max 100 bytes when encoded as UTF-8)')
             command[2] = name
+
         if profile:
             command[3] = profile
         converted_profile =','.join(command[3])
@@ -977,7 +981,12 @@ class nobo:
         # profile id is decided by the hub
         week_profile_id='0'
         converted_profile =','.join(profile)
+        name = name.replace(" ", "\u00A0")
+        if len(name.encode('utf-8')) > 100:
+            raise ValueError(f'Zone name "{name}" too long (max 100 bytes when encoded as UTF-8)')
+
         command = [nobo.API.ADD_WEEK_PROFILE] + [week_profile_id] + [name] + [converted_profile]
+        
         await self.async_send_command(command)
 
 
