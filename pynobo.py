@@ -189,6 +189,24 @@ class nobo:
             if temperature_int > 30:
                 raise ValueError(f'Max temperature is 30°C')
 
+        def validate_week_profile(profile):
+            if type(profile) != list:
+                raise ValueError("Week profile must be a list")
+            day_count=0
+            for i in profile:
+                if len(i) != 5:
+                    raise ValueError(f"Invalid week profile entry: {i}")
+                time = datetime.datetime.strptime(i[0:4], "%H%M")
+                if not time.minute % 15 == 0:
+                    raise ValueError(f"Week profile entry not in whole quarters: {i}")
+                # Last character is state (0=Eco, 1=Comfort, 2=Away, 4=Off)
+                if not i[4] in "0124":
+                    raise ValueError(f"Week profile entry contains invalid state, must be 0, 1, 2, or 4: {i}")
+                if time.hour == 0 and time.minute == 0:
+                    day_count+=1
+            if day_count != 7:
+                raise ValueError("Week profile must contain exactly 7 entries for midnight (starting with 0000)")
+
 
     class Model:
         """
@@ -916,54 +934,8 @@ class nobo:
 
         await self.async_send_command(command)
 
-    def test_week_profile(self,profile):
-        if type(profile) != list:
-            return False
-        if len(profile)<7:
-            return False
-        zero_day_count=0
-        for i in profile:
-            if i.startswith('0000'):
-                zero_day_count+=1
-            if (not i.endswith('0')) or (not i.endswith('1')) or (not i.endswith('2')) or (not i.endswith('3')) or (not i.endswith('4')) :
-                return False
-            if len(i)==5:
-                if time_is_quarter(i[2:3]):
-                    return False
 
-        if zero_day_count<7:
-            return False
-        return True
-
-
-    async def async_update_week_profile(self, week_profile_id, name=None, profile=None):
-        """
-        Update the name and profile parameter for a week.
-
-        :param week_profile_id: the week_profile_id
-        :param name: the new zone name (default None)
-        :param profile: the new profile (default None)
-        """
-
-        # Initialize command with the current zone settings
-        command = [nobo.API.UPDATE_WEEK_PROFILE] + list(self.week_profiles[week_profile_id].values())
-
-        # Replace command with arguments that are not None. Is there a more elegant way?
-        if name:
-            name = name.replace(" ", "\u00A0")
-            if len(name.encode('utf-8')) > 100:
-                 raise ValueError(f'Zone name "{name}" too long (max 100 bytes when encoded as UTF-8)')
-            command[2] = name
-
-        if profile:
-            command[3] = profile
-        converted_profile =','.join(command[3])
-        command[3]=converted_profile
-
-        await self.async_send_command(command)
-
-
-    async def async_add_week_profile(self,name,profile=None):
+    async def async_add_week_profile(self, name, profile=None):
         """
         Add the name and profile parameter for a week.
 
@@ -972,10 +944,10 @@ class nobo:
         """
 
         # if no profile is defined
-        if profile==None:
-            profile=list(['00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000'])
-        if self.test_week_profile(profile):
-            raise ValueError ("test of week profile fails")
+        if profile is None:
+            profile=['00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000','00000','12001','16000']
+        _LOGGER.debug('profile: %s', ",".join(profile))
+        nobo.API.validate_week_profile(profile)
 
         # profile id is decided by the hub
         week_profile_id='0'
@@ -985,11 +957,57 @@ class nobo:
             raise ValueError(f'Zone name "{name}" too long (max 100 bytes when encoded as UTF-8)')
 
         command = [nobo.API.ADD_WEEK_PROFILE] + [week_profile_id] + [name] + [converted_profile]
-        
+
         await self.async_send_command(command)
 
 
+    async def async_update_week_profile(self, week_profile_id: str, name=None, profile=None):
+        """
+        Update the name and profile parameter for a week.
 
+        :param week_profile_id: the week_profile_id
+        :param name: the new zone name (default None)
+        :param profile: the new profile (default None)
+        """
+
+        if week_profile_id not in self.week_profiles:
+            raise ValueError(f"Unknown week profile {week_profile_id}")
+        if name is None and profile is None:
+            raise ValueError("Set at least name or profile to update")
+
+        if name:
+            name = name.replace(" ", "\u00A0")
+            if len(name.encode('utf-8')) > 100:
+                 raise ValueError(f'Zone name "{name}" too long (max 100 bytes when encoded as UTF-8)')
+        else:
+            name = self.week_profiles[week_profile_id]["name"]
+
+        if profile:
+            nobo.API.validate_week_profile(profile)
+        else:
+            profile = self.week_profiles[week_profile_id]["profile"]
+
+        command = [nobo.API.UPDATE_WEEK_PROFILE, week_profile_id, name, ','.join(profile)]
+        await self.async_send_command(command)
+
+    async def async_remove_week_profile(self, week_profile_id: str):
+        """
+        Remove the week profile.
+
+        :param week_profile_id: the week_profile_id
+        """
+
+        if week_profile_id not in self.week_profiles:
+            raise ValueError(f"Unknown week profile {week_profile_id}")
+
+        if week_profile_id in (v['week_profile_id'] for k, v in self.zones.items()):
+            raise ValueError(f"Week profile {week_profile_id} in use, can not remove")
+
+        name = self.week_profiles[week_profile_id]["name"]
+        profile = self.week_profiles[week_profile_id]["profile"]
+
+        command = [nobo.API.REMOVE_WEEK_PROFILE, week_profile_id, name, ','.join(profile)]
+        await self.async_send_command(command)
 
     def get_week_profile_status(self, week_profile_id, dt=datetime.datetime.today()):
         """
