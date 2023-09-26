@@ -89,6 +89,9 @@ These functions send commands to the hub.
 * async_send_command - Send a list of command string(s) to the hub
 * async_create_override - Override hub/zones/components
 * async_update_zone - Update the name, week profile, temperature or override allowing for a zone.  
+* async_add_week_profile - Create a week profile
+* async_update_week_profile - Update a week profile
+* async_remove_week_profile - Remove a week profile
 
 ### Dictionary helper functions
 
