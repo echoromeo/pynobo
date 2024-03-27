@@ -4,7 +4,6 @@ from contextlib import suppress
 import datetime
 import errno
 import logging
-import time
 import threading
 import warnings
 import socket
@@ -342,7 +341,7 @@ class nobo:
                 if discover_ip and discover_serial:
                     self.hubs.add( (discover_ip, discover_serial) )
 
-    def __init__(self, serial, ip=None, discover=True, loop=None, synchronous=True):
+    def __init__(self, serial, ip=None, discover=True, loop=None, synchronous=True, timezone: datetime.tzinfo=None):
         """
         Initialize logger and dictionaries.
 
@@ -359,6 +358,7 @@ class nobo:
         if loop is not None:
             _LOGGER.warning("loop is deprecated. Use synchronous=False instead.")
             synchronous=False
+        self.timezone = timezone
 
         self._callbacks = []
         self._reader = None
@@ -491,7 +491,8 @@ class nobo:
         self._reader, self._writer = await asyncio.wait_for(asyncio.open_connection(ip, 27779), timeout=5)
 
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
-        await self.async_send_command([nobo.API.START, nobo.API.VERSION, serial, time.strftime('%Y%m%d%H%M%S')])
+        now = datetime.datetime.now(self.timezone).strftime('%Y%m%d%H%M%S')
+        await self.async_send_command([nobo.API.START, nobo.API.VERSION, serial, now])
 
         # receive the response data (4096 is recommended buffer size)
         response = await asyncio.wait_for(self.get_response(), timeout=5)

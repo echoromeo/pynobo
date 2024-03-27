@@ -61,7 +61,7 @@ It is possible to discover hubs on the local network, and also test connectivity
     hubs = await nobo.async_discover_hubs()
 
     # Test connection to the first
-    (serial, ip) = hubs.pop()
+    (ip, serial) = hubs.pop()
     hub = nobo(serial + '123', ip=ip, discover=False, synchronous=False)
     await hub.connect()
 
