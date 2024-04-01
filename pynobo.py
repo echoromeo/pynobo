@@ -1010,16 +1010,18 @@ class nobo:
         command = [nobo.API.REMOVE_WEEK_PROFILE, week_profile_id, name, ','.join(profile)]
         await self.async_send_command(command)
 
-    def get_week_profile_status(self, week_profile_id, dt=datetime.datetime.today()):
+    def get_week_profile_status(self, week_profile_id, dt: datetime.datetime=None):
         """
         Get the status of a week profile at a certain time in the week. Monday is day 0.
 
         :param week_profile_id: -- the week profile id in question
-        :param dt: -- datetime for the status in question (default datetime.datetime.today())
+        :param dt: -- datetime for the status in question (defaults to now in timezone from initialization)
 
         :return: the status for the profile
         """
         profile = self.week_profiles[week_profile_id]['profile']
+        if dt is None:
+            dt = datetime.datetime.now(self.timezone)
         target = (dt.hour*100) + dt.minute
         # profile[0] is always 0000x, so this provides the initial status
         status = profile[0][-1]
@@ -1032,7 +1034,12 @@ class nobo:
                     status = timestamp[-1]
                 else:
                     break
-        _LOGGER.debug('Status at %s on weekday %s is %s', target, dt.weekday(), nobo.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status])
+        _LOGGER.debug(
+            'Status for week profile %s at %s is %s',
+            self.week_profiles[week_profile_id]['name'],
+            dt.strftime('%A %H:%M'),
+            nobo.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
+        )
         return nobo.API.DICT_WEEK_PROFILE_STATUS_TO_NAME[status]
 
     def get_zone_override_mode(self, zone_id):
@@ -1059,24 +1066,27 @@ class nobo:
         _LOGGER.debug('Current override for zone %s is %s', self.zones[zone_id]['name'], mode)
         return mode
 
-    def get_current_zone_mode(self, zone_id, now=None):
+    def get_current_zone_mode(self, zone_id, now: datetime.datetime=None):
         """
         Get the mode of a zone at a certain time. If the zone is overridden only now is possible.
 
         :param zone_id: the zone id in question
-        :param now: datetime for the status in question (default datetime.datetime.today())
+        :param now: datetime for the status in question (defaults to now in timezone from initialization)
 
         :return: the mode for the zone
         """
         if now is None:
-            now = datetime.datetime.today()
-        current_time = (now.hour*100) + now.minute
+            now = datetime.datetime.now(self.timezone)
         current_mode = self.get_zone_override_mode(zone_id)
         if current_mode == nobo.API.NAME_NORMAL:
             # no override - find mode from week profile
             current_mode = self.get_week_profile_status(self.zones[zone_id]['week_profile_id'], now)
 
-        _LOGGER.debug('Current mode for zone %s at %s is %s', self.zones[zone_id]['name'], current_time, current_mode)
+        _LOGGER.debug(
+            'Current mode for zone %s at %s is %s',
+            self.zones[zone_id]['name'],
+            now.strftime('%A %H:%M'),
+            current_mode)
         return current_mode
 
     def get_current_component_temperature(self, serial):
