@@ -163,15 +163,11 @@ class nobo:
         DICT_NAME_TO_WEEK_PROFILE_STATUS = {NAME_ECO : WEEK_PROFILE_STATE_ECO, NAME_COMFORT : WEEK_PROFILE_STATE_COMFORT, NAME_AWAY : WEEK_PROFILE_STATE_AWAY, NAME_OFF : WEEK_PROFILE_STATE_OFF}
 
         def is_valid_datetime(timestamp: str):
+            if len(timestamp) != 12:
+                # Leading zero is optional for some of the fields below, but we require it.
+                return False
             try:
                 datetime.datetime.strptime(timestamp, '%Y%m%d%H%M')
-            except ValueError:
-                return False
-            return True
-
-        def is_valid_time(time_of_day: str):
-            try:
-                datetime.datetime.strptime(time_of_day, '%H%M')
             except ValueError:
                 return False
             return True
@@ -179,8 +175,10 @@ class nobo:
         def time_is_quarter(minutes: str):
             return int(minutes) % 15 == 0
 
-        def validate_temperature(temperature: str):
-            if not temperature.isdigit():
+        def validate_temperature(temperature: Union[int, str]):
+            if type(temperature) not in (int, str):
+                raise TypeError('Temperature must be integer or string')
+            if isinstance(temperature, str) and not temperature.isdigit():
                 raise ValueError(f'Temperature "{temperature}" must be digits')
             temperature_int = int(temperature)
             if temperature_int < 7:
