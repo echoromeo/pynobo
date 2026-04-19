@@ -37,8 +37,8 @@ class PynoboHandshakeError(PynoboError):
     """Raised when the hub rejects the handshake (bad serial, wrong version)."""
 
 
-class PynoboValidationError(PynoboError, ValueError):
-    """Raised for invalid parameters. Inherits ValueError for back-compat."""
+class PynoboValidationError(PynoboError, ValueError, TypeError):
+    """Raised for invalid parameters. Inherits ValueError and TypeError for back-compat."""
 
 
 class nobo:
@@ -196,7 +196,7 @@ class nobo:
 
         def validate_temperature(temperature: Union[int, str]) -> None:
             if type(temperature) not in (int, str):
-                raise TypeError('Temperature must be integer or string')
+                raise PynoboValidationError('Temperature must be integer or string')
             if isinstance(temperature, str) and not temperature.isdigit():
                 raise PynoboValidationError(f'Temperature "{temperature}" must be digits')
             temperature_int = int(temperature)
@@ -389,7 +389,12 @@ class nobo:
         self.ip = ip
         self.discover = discover
         if loop is not None:
-            _LOGGER.warning("loop is deprecated. Use synchronous=False instead.")
+            warnings.warn(
+                "the loop parameter is deprecated and will be removed in pynobo 2.0; "
+                "use synchronous=False and manage the event loop yourself.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
             synchronous=False
         self.timezone = timezone
 
@@ -510,6 +515,12 @@ class nobo:
             _LOGGER.info('connection closed')
 
     def connect_hub(self, ip: str, serial: str) -> bool:
+        warnings.warn(
+            "nobo.connect_hub is deprecated and will be removed in pynobo 2.0; "
+            "use `await hub.async_connect_hub(ip, serial)` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -527,14 +538,20 @@ class nobo:
         if len(serial) != 12 or not serial.isdigit():
             raise PynoboValidationError(f'Invalid serial number: {serial}')
 
-        self._reader, self._writer = await asyncio.wait_for(asyncio.open_connection(ip, 27779), timeout=5)
+        try:
+            self._reader, self._writer = await asyncio.wait_for(asyncio.open_connection(ip, 27779), timeout=5)
+        except (OSError, asyncio.TimeoutError) as e:
+            raise PynoboConnectionError(f'Failed to connect to Nobø Ecohub at {ip}') from e
 
         # start handshake: "HELLO <version of command set> <Hub s.no.> <date and time in format 'yyyyMMddHHmmss'>\r"
         now = datetime.datetime.now(self.timezone).strftime('%Y%m%d%H%M%S')
         await self.async_send_command([nobo.API.START, nobo.API.VERSION, serial, now])
 
         # receive the response data (4096 is recommended buffer size)
-        response = await asyncio.wait_for(self.get_response(), timeout=5)
+        try:
+            response = await asyncio.wait_for(self.get_response(), timeout=5)
+        except asyncio.TimeoutError as e:
+            raise PynoboConnectionError(f'Timed out waiting for handshake response from {ip}') from e
         _LOGGER.debug('first handshake response: %s', response)
 
         # successful response is "HELLO <its version of command set>\r"
@@ -547,7 +564,10 @@ class nobo:
 
             # send/receive handshake complete
             await self.async_send_command([nobo.API.HANDSHAKE])
-            response = await asyncio.wait_for(self.get_response(), timeout=5)
+            try:
+                response = await asyncio.wait_for(self.get_response(), timeout=5)
+            except asyncio.TimeoutError as e:
+                raise PynoboConnectionError(f'Timed out waiting for final handshake response from {ip}') from e
             _LOGGER.debug('second handshake response: %s', response)
 
             if response[0] == nobo.API.HANDSHAKE:
@@ -556,7 +576,10 @@ class nobo:
                 self.hub_serial = serial
 
                 # Get initial data
-                await asyncio.wait_for(self._get_initial_data(), timeout=5)
+                try:
+                    await asyncio.wait_for(self._get_initial_data(), timeout=5)
+                except asyncio.TimeoutError as e:
+                    raise PynoboConnectionError(f'Timed out waiting for initial data from {ip}') from e
                 for callback in self._callbacks:
                     callback(self)
                 return True
@@ -606,7 +629,7 @@ class nobo:
                         discovered_hubs.add( (discover_ip, discover_serial) )
                         await asyncio.sleep(1)
                     else:
-                        raise e
+                        raise PynoboConnectionError(f'Failed to reconnect to Nobø Ecohub at {discover_ip}: {e}') from e
         else:
             connected = False
             while not connected:
@@ -619,7 +642,7 @@ class nobo:
                         if e.errno in RECONNECT_ERRORS:
                             _LOGGER.debug('Ignoring %s', e)
                         else:
-                            raise e
+                            raise PynoboConnectionError(f'Failed to reconnect to Nobø Ecohub at {self.ip}: {e}') from e
 
         self._keep_alive = True
         _LOGGER.info('reconnected to Nobø Hub')
@@ -631,8 +654,12 @@ class nobo:
         autodiscover_wait: float = 3.0,
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> set[tuple[str, str]]:
-        if loop is not None:
-            _LOGGER.warning("loop is deprecated")
+        warnings.warn(
+            "nobo.discover_hubs is deprecated and will be removed in pynobo 2.0; "
+            "use `await nobo.async_discover_hubs(...)` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -675,7 +702,11 @@ class nobo:
         """
 
         if loop is not None:
-            _LOGGER.warning("loop is deprecated.")
+            warnings.warn(
+                "the loop parameter is deprecated and will be removed in pynobo 2.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         transport, protocol = await asyncio.get_running_loop().create_datagram_endpoint(
             lambda: nobo.DiscoveryProtocol(serial, ip),
             local_addr=('0.0.0.0', 10000),
@@ -724,6 +755,12 @@ class nobo:
         loop.call_soon_threadsafe(lambda: loop.create_task(target))
 
     def send_command(self, commands: list[Any]) -> None:
+        warnings.warn(
+            "nobo.send_command is deprecated and will be removed in pynobo 2.0; "
+            "use `await hub.async_send_command(commands)` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._create_task(self.async_send_command(commands))
 
     async def async_send_command(self, commands: list[Any]) -> None:
@@ -768,7 +805,7 @@ class nobo:
         except ConnectionError as e:
             _LOGGER.info('lost connection to hub (%s)', e)
             await self.close()
-            raise e
+            raise PynoboConnectionError(f'Lost connection to Nobø Ecohub: {e}') from e
         response  = message.decode('utf-8').split(' ')
         _LOGGER.debug('received: %s', response)
         return response
@@ -795,6 +832,7 @@ class nobo:
                         _LOGGER.info('Reconnecting due to %s', e)
                         await self.reconnect_hub()
                     else:
+                        # Caught by the outer `except Exception` below, so don't need to wrap.
                         raise e
         except asyncio.CancelledError:
             _LOGGER.debug('socket_receive stopped')
@@ -907,6 +945,12 @@ class nobo:
         end_time: str = '-1',
         start_time: str = '-1',
     ) -> None:
+        warnings.warn(
+            "nobo.create_override is deprecated and will be removed in pynobo 2.0; "
+            "use `await hub.async_create_override(...)` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._create_task(self.async_create_override(mode, type, target_type, target_id, end_time, start_time))
 
     async def async_create_override(
@@ -962,6 +1006,12 @@ class nobo:
         temp_eco_c: int | str | None = None,
         override_allowed: str | None = None,
     ) -> None:
+        warnings.warn(
+            "nobo.update_zone is deprecated and will be removed in pynobo 2.0; "
+            "use `await hub.async_update_zone(...)` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._create_task(self.async_update_zone(zone_id, name, week_profile_id, temp_comfort_c, temp_eco_c, override_allowed))
 
     async def async_update_zone(

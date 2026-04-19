@@ -115,15 +115,24 @@ Errors raised by pynobo inherit from `PynoboError`:
 
 ## Backwards compatibility
 
-Synchronous wrapper methods are available for compatibility with v1.1.2, but it is recommended to
-switch to the async methods by initializing the hub with `synchronous=False`.
+**Deprecated as of 1.9.0, to be removed in 2.0.** The synchronous wrapper API is still available for
+compatibility with v1.1.2, but every sync entry point now emits a `DeprecationWarning`. Migrate to
+the async API — initialize with `synchronous=False` and call the `async_*` methods from an event
+loop (or `asyncio.run(...)`).
 
-> **Deprecated:** `synchronous=True` emits a `DeprecationWarning` since 1.9.0 and will be removed in
-> pynobo 2.0. Migrate to the async API by calling `asyncio.run(hub.connect())` (or awaiting from an
-> existing event loop) instead of relying on the daemon-thread wrapper.
+> The following APIs emit a `DeprecationWarning`:
+>
+> - `synchronous=True` in `nobo(...)` — the daemon-thread wrapper. Use the async API and
+>   `asyncio.run(hub.connect())` (or await from an existing event loop) instead.
+> - `nobo.connect_hub(ip, serial)` — use `await hub.async_connect_hub(ip, serial)`.
+> - `nobo.discover_hubs(...)` — use `await nobo.async_discover_hubs(...)`.
+> - `hub.send_command(commands)` — use `await hub.async_send_command(commands)`.
+> - `hub.create_override(...)` — use `await hub.async_create_override(...)`.
+> - `hub.update_zone(...)` — use `await hub.async_update_zone(...)`.
+> - `loop=` parameter in `nobo(...)` and `nobo.async_discover_hubs(...)`.
 
-Otherwise, initializing will start the async event loop in a daemon thread, discover and connect to
-hub before returning as before.
+While `synchronous=True` remains supported in 1.x, initializing this way starts the async event loop
+in a daemon thread, discovers and connects to the hub before returning as before.
 
     import time
     from pynobo import nobo

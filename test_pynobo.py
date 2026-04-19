@@ -62,11 +62,19 @@ class TestExceptionHierarchy(unittest.TestCase):
         with self.assertRaises(ValueError):
             nobo.API.validate_temperature(6)
 
+    def test_validation_error_raised_for_type_check(self):
+        with self.assertRaises(PynoboValidationError):
+            nobo.API.validate_temperature(0.0)
+        # back-compat: callers catching TypeError still work
+        with self.assertRaises(TypeError):
+            nobo.API.validate_temperature(0.0)
+
     def test_all_errors_inherit_base(self):
         self.assertTrue(issubclass(PynoboConnectionError, PynoboError))
         self.assertTrue(issubclass(PynoboHandshakeError, PynoboError))
         self.assertTrue(issubclass(PynoboValidationError, PynoboError))
         self.assertTrue(issubclass(PynoboValidationError, ValueError))
+        self.assertTrue(issubclass(PynoboValidationError, TypeError))
 
 
 class TestPyTypedMarker(unittest.TestCase):
