@@ -93,14 +93,16 @@ setup(
     #
     #   py_modules=["my_module"],
     #
-#    packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
-    py_modules=["pynobo"],
+    packages=["pynobo"],
+    package_data={"pynobo": ["py.typed"]},
+    include_package_data=True,
+    zip_safe=False,
 
     # Specify which Python versions you support. In contrast to the
     # 'Programming Language' classifiers above, 'pip install' will check this
     # and refuse to install the project if the version does not match. See
     # https://packaging.python.org/guides/distributing-packages-using-setuptools/#python-requires
-    python_requires='>=3.7, <4',
+    python_requires='>=3.10, <4',
 
     # This field lists other packages that your project depends on to run.
     # Any package you put here will be installed by pip when your project is

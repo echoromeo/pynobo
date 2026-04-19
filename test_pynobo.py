@@ -1,6 +1,13 @@
+import pathlib
 import unittest
 
-from pynobo import nobo
+from pynobo import (
+    PynoboConnectionError,
+    PynoboError,
+    PynoboHandshakeError,
+    PynoboValidationError,
+    nobo,
+)
 
 class TestValidation(unittest.TestCase):
 
@@ -44,6 +51,30 @@ class TestValidation(unittest.TestCase):
             nobo.API.validate_week_profile(['00003','00000','00000','00000','00000','00000','00000'])
         with self.assertRaisesRegex(ValueError, "not in whole quarters"):
             nobo.API.validate_week_profile(['00000','01231','00000','00000','00000','00000','00000','00000'])
+
+
+class TestExceptionHierarchy(unittest.TestCase):
+
+    def test_validation_error_raised_and_inherits_value_error(self):
+        with self.assertRaises(PynoboValidationError):
+            nobo.API.validate_temperature(6)
+        # back-compat: callers catching ValueError still work
+        with self.assertRaises(ValueError):
+            nobo.API.validate_temperature(6)
+
+    def test_all_errors_inherit_base(self):
+        self.assertTrue(issubclass(PynoboConnectionError, PynoboError))
+        self.assertTrue(issubclass(PynoboHandshakeError, PynoboError))
+        self.assertTrue(issubclass(PynoboValidationError, PynoboError))
+        self.assertTrue(issubclass(PynoboValidationError, ValueError))
+
+
+class TestPyTypedMarker(unittest.TestCase):
+
+    def test_py_typed_file_is_present_in_source(self):
+        marker = pathlib.Path(__file__).parent / "pynobo" / "py.typed"
+        self.assertTrue(marker.is_file(), f"{marker} is missing")
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -104,11 +104,26 @@ not perform any I/O, and can safely be called from the event loop.
 * get_current_zone_temperature - Get the current temperature from (the first component in) a zone
 * get_zone_override_mode - Get the override mode for the zone
 
+## Exceptions
+
+Errors raised by pynobo inherit from `PynoboError`:
+
+* `PynoboConnectionError` — TCP connection to the hub failed or was lost
+* `PynoboHandshakeError` — the hub rejected the handshake (bad serial, wrong API version, etc.)
+* `PynoboValidationError` — invalid parameters. Also inherits `ValueError` for backwards compatibility with callers
+  written against earlier versions.
+
 ## Backwards compatibility
 
 Synchronous wrapper methods are available for compatibility with v1.1.2, but it is recommended to
-switch to the async methods by initializing the hub with `synchronous=False`. Otherwise, initializing
-will start the async event loop in a daemon thread, discover and connect to hub before returning as before.
+switch to the async methods by initializing the hub with `synchronous=False`.
+
+> **Deprecated:** `synchronous=True` emits a `DeprecationWarning` since 1.9.0 and will be removed in
+> pynobo 2.0. Migrate to the async API by calling `asyncio.run(hub.connect())` (or awaiting from an
+> existing event loop) instead of relying on the daemon-thread wrapper.
+
+Otherwise, initializing will start the async event loop in a daemon thread, discover and connect to
+hub before returning as before.
 
     import time
     from pynobo import nobo

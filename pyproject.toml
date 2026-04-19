@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pynobo"
+version = "1.8.1"
+description = "Nobø Hub / Nobø Energy Control TCP/IP Interface"
+readme = "README.md"
+license = { text = "GPL-3.0-or-later" }
+authors = [
+    { name = "echoromeo, capelevy, oyvindwe" },
+]
+keywords = ["hvac", "nobø", "heating", "automation"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Home Automation",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Typing :: Typed",
+]
+requires-python = ">=3.10, <4"
+
+[project.urls]
+Homepage = "https://github.com/echoromeo/pynobo"
+Source = "https://github.com/echoromeo/pynobo"
+"Bug Reports" = "https://github.com/echoromeo/pynobo/issues"
+
+[tool.setuptools]
+packages = ["pynobo"]
+zip-safe = false
+include-package-data = true
+
+[tool.setuptools.package-data]
+pynobo = ["py.typed"]
