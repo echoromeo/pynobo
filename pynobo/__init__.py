@@ -52,6 +52,17 @@ class PynoboValidationError(PynoboError, ValueError, TypeError):
     """Raised for invalid parameters. Inherits ValueError and TypeError for back-compat."""
 
 
+ModelType = Literal[
+    "THERMOSTAT_HEATER",
+    "THERMOSTAT_FLOOR",
+    "THERMOSTAT_ROOM",
+    "SWITCH",
+    "SWITCH_OUTLET",
+    "CONTROL_PANEL",
+    "UNKNOWN",
+]
+
+
 class HubInfo(TypedDict):
     serial: str
     name: str
@@ -306,15 +317,7 @@ class nobo:
         def __init__(
                 self,
                 model_id: str,
-                type: Literal[
-                    "THERMOSTAT_HEATER",
-                    "THERMOSTAT_FLOOR",
-                    "THERMOSTAT_ROOM",
-                    "SWITCH",
-                    "SWITCH_OUTLET",
-                    "CONTROL_PANEL",
-                    "UNKNOWN",
-                ],
+                type: ModelType,
                 name: str,
                 *,
                 supports_comfort: bool = False,
@@ -340,17 +343,7 @@ class nobo:
             return self._name
 
         @property
-        def type(
-            self,
-        ) -> Literal[
-            "THERMOSTAT_HEATER",
-            "THERMOSTAT_FLOOR",
-            "THERMOSTAT_ROOM",
-            "SWITCH",
-            "SWITCH_OUTLET",
-            "CONTROL_PANEL",
-            "UNKNOWN",
-        ]:
+        def type(self) -> ModelType:
             """Model type."""
             return self._type
 
