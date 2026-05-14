@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pynobo"
-version = "1.8.1"
+version = "1.9.0"
 description = "Nobø Hub / Nobø Energy Control TCP/IP Interface"
 readme = "README.md"
 license = { text = "GPL-3.0-or-later" }
