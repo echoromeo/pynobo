@@ -421,5 +421,15 @@ class TestSocketReceiveReconnect(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(order, ['connection', 'data'])
 
 
+class TestDiscovery(unittest.IsolatedAsyncioTestCase):
+
+    async def test_repeated_discover_without_reuse_port(self):
+        # Windows has no SO_REUSEPORT, so the discovery socket must be closed
+        # before async_discover_hubs returns, or the next call fails to bind (#42).
+        with patch.object(nobo, '_reuse_port', return_value=False):
+            await nobo.async_discover_hubs(autodiscover_wait=0)
+            await nobo.async_discover_hubs(autodiscover_wait=0)
+
+
 if __name__ == '__main__':
     unittest.main()

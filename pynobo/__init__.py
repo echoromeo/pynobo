@@ -406,9 +406,13 @@ class nobo:
             self.serial = serial
             self.ip = ip
             self.hubs: set[tuple[str, str]] = set()
+            self.closed = asyncio.Event()
 
         def connection_made(self, transport: asyncio.transports.DatagramTransport) -> None:  # type: ignore[override]
             self.transport = transport
+
+        def connection_lost(self, exc: Exception | None) -> None:
+            self.closed.set()
 
         def datagram_received(self, data: bytes, addr: tuple[str | Any, ...]) -> None:
             msg = data.decode('utf-8')
@@ -828,12 +832,19 @@ class nobo:
                 await asyncio.sleep(autodiscover_wait)
         finally:
             transport.close()
+            # The socket is closed on a later event loop iteration. Wait for it, so a
+            # subsequent call can bind the port again where SO_REUSEPORT is not available.
+            await protocol.closed.wait()
         return protocol.hubs
 
     @staticmethod
     def _reuse_port() -> bool:
         """
-        Check if we can set `reuse_port` when listening for broadcasts. To support Windows.
+        Check if we can set `reuse_port` when listening for broadcasts.
+
+        SO_REUSEPORT allows several discoveries to listen on the port concurrently. Windows
+        does not support SO_REUSEPORT, so there concurrent discoveries will fail to bind;
+        sequential discoveries work since async_discover_hubs waits for the socket to close.
         """
         if hasattr(socket, 'SO_REUSEPORT'):
             sock = socket.socket(type=socket.SOCK_DGRAM)
