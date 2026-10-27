@@ -116,7 +116,8 @@ loop; exceptions they raise are logged and swallowed.
         print("connected" if connected else "disconnected")
 
     hub.register_connection_callback(on_connection_state)
-    await hub.connect()
+    # start() connects and runs the background tasks that receive updates and reconnect
+    await hub.start()
     assert hub.connected
     # ...later, to stop listening:
     hub.deregister_connection_callback(on_connection_state)
@@ -176,7 +177,8 @@ loop (or `asyncio.run(...)`).
 > The following APIs emit a `DeprecationWarning`:
 >
 > - `synchronous=True` in `nobo(...)` — the daemon-thread wrapper. Use the async API and
->   `asyncio.run(hub.connect())` (or await from an existing event loop) instead.
+>   `await hub.start()` from an event loop instead. Note that `hub.connect()` alone only
+>   performs the handshake and does not receive updates from the hub.
 > - `nobo.connect_hub(ip, serial)` — use `await hub.async_connect_hub(ip, serial)`.
 > - `nobo.discover_hubs(...)` — use `await nobo.async_discover_hubs(...)`.
 > - `hub.send_command(commands)` — use `await hub.async_send_command(commands)`.
