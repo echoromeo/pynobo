@@ -690,7 +690,7 @@ class nobo:
                 # arrives and don't have to handle a "data while disconnected"
                 # window during reconnect.
                 self._set_connected(True)
-                for callback in self._callbacks:
+                for callback in list(self._callbacks):
                     callback(self)
                 return True
             else:
@@ -958,7 +958,7 @@ class nobo:
                         # TODO: Raise something here?
                     else:
                         self.response_handler(response)
-                        for callback in self._callbacks:
+                        for callback in list(self._callbacks):
                             callback(self)
                 except asyncio.IncompleteReadError:
                     _LOGGER.info('connection to hub closed by peer; reconnecting')
